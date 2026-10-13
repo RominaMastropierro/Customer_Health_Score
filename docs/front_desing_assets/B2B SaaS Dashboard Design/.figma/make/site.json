@@ -1,0 +1,10 @@
+{
+  "description": "This responsive web application enables B2B SaaS clients to track usage metrics, support tickets, and NPS scores, providing actionable insights through a user-friendly dashboard.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}

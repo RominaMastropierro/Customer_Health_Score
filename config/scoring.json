@@ -1,0 +1,16 @@
+{
+  "weights": {
+    "usage": 25,
+    "support_tickets": 25,
+    "nps": 25,
+    "renewal": 25
+  },
+  "thresholds": {
+    "top": 75,
+    "at_risk": 50
+  },
+  "normalization": {
+    "ticket_cap": 10,
+    "renewal_horizon_days": 180
+  }
+}

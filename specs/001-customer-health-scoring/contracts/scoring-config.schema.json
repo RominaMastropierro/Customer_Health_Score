@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "scoring-config.schema.json",
+  "title": "ScoringConfig",
+  "description": "Configuración del motor de scoring. Reglas entre campos que no expresa este schema: suma de pesos > 0 y thresholds.at_risk < thresholds.top.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["weights", "thresholds", "normalization"],
+  "properties": {
+    "weights": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["usage", "support_tickets", "nps", "renewal"],
+      "properties": {
+        "usage": { "type": "number", "minimum": 0 },
+        "support_tickets": { "type": "number", "minimum": 0 },
+        "nps": { "type": "number", "minimum": 0 },
+        "renewal": { "type": "number", "minimum": 0 }
+      }
+    },
+    "thresholds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["top", "at_risk"],
+      "properties": {
+        "top": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "at_risk": { "type": "integer", "minimum": 0, "maximum": 100 }
+      }
+    },
+    "normalization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ticket_cap", "renewal_horizon_days"],
+      "properties": {
+        "ticket_cap": { "type": "integer", "exclusiveMinimum": 0 },
+        "renewal_horizon_days": { "type": "integer", "exclusiveMinimum": 0 }
+      }
+    }
+  },
+  "examples": [
+    {
+      "weights": { "usage": 25, "support_tickets": 25, "nps": 25, "renewal": 25 },
+      "thresholds": { "top": 75, "at_risk": 50 },
+      "normalization": { "ticket_cap": 10, "renewal_horizon_days": 180 }
+    }
+  ]
+}

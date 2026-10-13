@@ -1,0 +1,124 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+
+/* Tokens del prototipo (docs/front_desing_assets/.../src/index.css). `--muted` y `--border`
+   se renombran a `--text-muted` y `--line` porque shadcn usa esos nombres con otro sentido. */
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --surface-subtle: #f9fafb;
+  --surface-hover: #f3f4f6;
+  --text: #15171c;
+  --text-muted: #68707d;
+  --faint: #9098a4;
+  --line: #e3e6ea;
+  --line-strong: #d2d6dc;
+  --brand: #5b5bd6;
+  --brand-strong: #4b4bc4;
+  --brand-soft: #eeeeff;
+  --top: #21845a;
+  --top-soft: #e9f7f0;
+  --stable: #ad6d0b;
+  --stable-soft: #fff5df;
+  --risk: #c74444;
+  --risk-soft: #ffeded;
+  --invalid: #717784;
+  --invalid-soft: #f0f1f3;
+  --shadow: 0 1px 2px rgba(20, 24, 32, 0.04), 0 8px 30px rgba(20, 24, 32, 0.04);
+
+  --background: var(--bg);
+  --foreground: var(--text);
+  --card: var(--surface);
+  --card-foreground: var(--text);
+  --popover: var(--surface);
+  --popover-foreground: var(--text);
+  --primary: var(--brand);
+  --primary-foreground: #ffffff;
+  --secondary: var(--surface-subtle);
+  --secondary-foreground: var(--text);
+  --muted: var(--surface-subtle);
+  --muted-foreground: var(--text-muted);
+  --accent: var(--surface-hover);
+  --accent-foreground: var(--text);
+  --destructive: var(--risk);
+  --border: var(--line);
+  --input: var(--line-strong);
+  --ring: var(--brand);
+  --radius: 12px;
+}
+
+:root[data-theme="dark"] {
+  --bg: #111217;
+  --surface: #181a20;
+  --surface-subtle: #1d2027;
+  --surface-hover: #23262e;
+  --text: #f1f2f4;
+  --text-muted: #a1a7b0;
+  --faint: #737b87;
+  --line: #292d35;
+  --line-strong: #3a3f49;
+  --brand: #8a8aef;
+  --brand-strong: #7474e2;
+  --brand-soft: #282845;
+  --top: #58bc8a;
+  --top-soft: #1c3329;
+  --stable: #e5a83f;
+  --stable-soft: #392d19;
+  --risk: #ec7777;
+  --risk-soft: #3b2225;
+  --invalid: #a3a9b2;
+  --invalid-soft: #292c32;
+  --shadow: 0 12px 38px rgba(0, 0, 0, 0.2);
+  --primary-foreground: #111217;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --font-sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 6px);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-faint: var(--faint);
+  --color-brand: var(--brand);
+  --color-brand-soft: var(--brand-soft);
+  --color-top: var(--top);
+  --color-top-soft: var(--top-soft);
+  --color-stable: var(--stable);
+  --color-stable-soft: var(--stable-soft);
+  --color-risk: var(--risk);
+  --color-risk-soft: var(--risk-soft);
+  --color-invalid: var(--invalid);
+  --color-invalid-soft: var(--invalid-soft);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground min-w-[320px] font-sans antialiased;
+  }
+}
