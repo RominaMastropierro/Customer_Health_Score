@@ -26,7 +26,7 @@ Una persona de Customer Success abre el dashboard y ve la misma cartera de 20 cl
 2. **Given** la cartera cargada, **When** se consulta la cartera y el score de cualquier cliente, **Then** el resultado es idéntico (valores, campos y estructura) al que devolvía el servicio con el archivo de datos.
 3. **Given** una cartera con cambios hechos después de la carga inicial, **When** se reinicia el servicio, **Then** los cambios siguen presentes y la carga inicial no los pisa ni duplica clientes.
 4. **Given** el almacenamiento ya cargado, **When** se ejecuta la carga inicial otra vez, **Then** no se crean duplicados y no se modifican los clientes existentes.
-5. **Given** el dashboard de la spec 002 sin modificaciones, **When** se usa contra el servicio con persistencia, **Then** todas sus pantallas funcionan igual que antes.
+5. **Given** el dashboard de la spec 002, **When** se usa contra el servicio con persistencia, **Then** todas sus pantallas funcionan igual que antes (los cambios de presentación del CUIL se describen en la historia 6).
 
 ---
 
@@ -111,6 +111,26 @@ Una persona de Customer Success elimina un cliente que ya no corresponde a la ca
 
 ---
 
+### User Story 6 - Ver el CUIL de cada cliente en el dashboard (Priority: P2)
+
+Una persona de Customer Success ve el CUIL de cada cliente en el dashboard, con el formato de presentación con guiones (`20-90000001-5`), para distinguir sin ambigüedad a clientes con nombres parecidos. Lo ve en la tabla de la cartera, en las tarjetas de la vista por categorías y en el detalle del cliente, y puede buscar clientes por CUIL en la tabla.
+
+**Why this priority**: el CUIL es la identificación única del cliente; mostrarlo hace útil el campo para quien usa el dashboard. Depende de que el servicio ya devuelva el CUIL (US1 y US2), por eso es P2.
+
+**Independent Test**: con la cartera cargada, se abre el dashboard y se verifica que cada cliente muestra su CUIL con guiones en la tabla, las tarjetas y el detalle, que buscar por CUIL (con o sin guiones) filtra la tabla, y que un resultado sin CUIL (cálculo de un cliente nuevo no guardado) no muestra ningún valor inventado.
+
+**Acceptance Scenarios**:
+
+1. **Given** la cartera cargada, **When** se abre la tabla de la cartera, **Then** cada cliente muestra su CUIL en formato `XX-XXXXXXXX-X`, en una columna propia, junto a su identificador y nombre.
+2. **Given** la vista por categorías, **When** se muestran las tarjetas de clientes, **Then** cada tarjeta muestra el CUIL con guiones junto al identificador.
+3. **Given** un cliente de la cartera, **When** se abre su detalle, **Then** el encabezado muestra su CUIL con guiones junto al identificador.
+4. **Given** la tabla de la cartera, **When** se escribe en el buscador un CUIL completo o parcial, con o sin guiones, **Then** la tabla se filtra por los clientes cuyo CUIL coincide, además de la búsqueda existente por nombre e identificador.
+5. **Given** un resultado de score sin cliente persistido (p. ej. "Calcular nuevo cliente"), **When** se muestra, **Then** no aparece ningún CUIL ni espacio vacío con etiqueta, y nada se rompe.
+6. **Given** un cliente cuyo CUIL no llega en la respuesta (valor ausente o nulo), **When** se muestra, **Then** se presenta un marcador neutro ("—") y la pantalla sigue funcionando.
+7. **Given** el servicio devuelve el CUIL sin guiones (11 dígitos), **When** el frontend lo muestra, **Then** lo presenta con guiones en las posiciones canónicas y copiar el valor entrega la forma de presentación; el dato recibido no se altera ni se envía de vuelta modificado.
+
+---
+
 ### Edge Cases
 
 - ¿Qué pasa si el almacenamiento está vacío porque se eliminaron todos los clientes (no porque sea la primera vez)? La carga inicial no debe volver a ejecutarse y repoblar la cartera: la cartera queda vacía y el dashboard muestra su estado vacío.
@@ -127,6 +147,8 @@ Una persona de Customer Success elimina un cliente que ya no corresponde a la ca
 - ¿Qué pasa si un CUIL con formato o dígito incorrectos coincide además con uno existente? Primero rige la validación: se responde 422, no 409.
 - ¿Qué pasa si el identificador de la ruta tiene espacios, mayúsculas o caracteres especiales? Se tratan como un identificador literal: distingue mayúsculas de minúsculas y se compara exactamente.
 - ¿Qué pasa si el almacenamiento no está disponible o está dañado? El servicio informa un error de servicio explícito y no devuelve datos inventados ni parciales.
+- ¿Qué pasa si el frontend recibe un CUIL que no tiene exactamente 11 dígitos (dato inesperado)? Se muestra tal cual lo recibió, sin formatear ni fallar.
+- ¿Qué pasa si el CUIL es muy largo para el espacio disponible en pantallas angostas? Se muestra completo sin truncarse (tiene ancho fijo de 13 caracteres con guiones); la tabla puede desplazarse horizontalmente como ya lo hace.
 - ¿Qué pasa con un cuerpo de solicitud que no es JSON válido? Se rechaza con un error de validación en el mismo formato que el resto de la API.
 
 ## Requirements *(mandatory)*
@@ -169,13 +191,21 @@ Una persona de Customer Success elimina un cliente que ya no corresponde a la ca
 - **FR-031**: El CUIL MUST ser único en el almacenamiento, garantizado por una restricción de unicidad del propio almacenamiento y no solo por una verificación previa, de modo que dos solicitudes simultáneas nunca dejen dos clientes con el mismo CUIL.
 - **FR-032**: Un CUIL con formato incorrecto o dígito verificador inválido MUST responder 422 (validación), con mensaje en español que distinga formato de dígito verificador. Un CUIL ya registrado en otro cliente MUST responder 409 (conflicto) sin modificar nada. Si coinciden ambas condiciones, rige primero la validación (422). Actualizar un cliente con su propio CUIL no es conflicto.
 - **FR-033**: Los 20 clientes ficticios existentes (sin CUIL real) MUST migrarse a la nueva estructura con un CUIL ficticio asignado de forma determinista: prefijo `20`, cuerpo `90000001`, `90000002`, … en el orden del archivo de datos, omitiendo los cuerpos para los que no existe dígito verificador válido (resto 1), y el dígito verificador calculado con el algoritmo de FR-030. El CUIL asignado a cada cliente MUST quedar escrito en el archivo de datos inicial, de modo que la carga inicial sea repetible y produzca siempre los mismos valores (por ejemplo `20900000015`, `20900000023`, `20900000031`, `20900000058`, …). Los cuerpos que empiezan con `9` se eligen porque quedan por encima de los números de documento reales en uso, y así se evita coincidir con personas o empresas reales.
-- **FR-034**: Las operaciones de lectura (listado y consulta por identificador) MUST incluir el CUIL de cada cliente. Los endpoints existentes de score y cartera mantienen su contrato; incorporar el CUIL a sus respuestas es opcional y, de hacerse, solo de forma aditiva (FR-020).
+- **FR-034**: Las operaciones de lectura (listado y consulta por identificador) MUST incluir el CUIL de cada cliente. Además, las respuestas de la cartera (por cliente) y del score de un cliente persistido MUST incluir el campo `cuil`, de forma aditiva (FR-020): el campo es nuevo, los existentes no cambian y los consumidores que lo ignoran siguen funcionando. En los resultados de score que no corresponden a un cliente persistido (evaluación de métricas sueltas) el campo es nulo o está ausente.
+
+**Frontend (CUIL en el dashboard)**
+
+- **FR-035**: El dashboard MUST mostrar el CUIL de cada cliente en la tabla de la cartera (columna propia), en las tarjetas de la vista por categorías y en el encabezado del detalle del cliente.
+- **FR-036**: El frontend MUST presentar el CUIL con guiones en las posiciones canónicas (`XX-XXXXXXXX-X`) a partir de los 11 dígitos recibidos. Este formateo MUST definirse en un único lugar del frontend y reutilizarse en todas las pantallas; no se modifica ni reenvía el valor recibido. Si el valor no tiene 11 dígitos, se muestra tal cual; si es nulo o ausente, se muestra "—" (o no se muestra, en resultados sin cliente persistido).
+- **FR-037**: El buscador de la tabla de la cartera MUST permitir filtrar también por CUIL, con o sin guiones y por coincidencia parcial, sin perder la búsqueda actual por nombre e identificador.
+- **FR-038**: El frontend MUST seguir funcionando con respuestas sin `cuil` (compatibilidad hacia atrás) y MUST mantener el resto de su comportamiento: el identificador sigue siendo la clave de navegación y de las rutas; la pantalla "Calcular nuevo cliente" no pide ni muestra CUIL.
+- **FR-039**: Los cambios del frontend MUST incluir pruebas automatizadas que cubran: formateo del CUIL (11 dígitos, longitud inesperada, nulo), su presencia en tabla, tarjetas y detalle, la búsqueda por CUIL con y sin guiones, y la ausencia de CUIL en resultados sin cliente persistido. Los tipos de respuesta del frontend MUST declarar el campo como opcional y anulable.
 
 **Compatibilidad**
 
 - **FR-019**: El scoring (cálculo de score, niveles, sub-scores y configuración) MUST permanecer sin cambios: para las mismas métricas y configuración, los resultados son idénticos a los de las specs 001 y 002.
 - **FR-020**: Los endpoints existentes MUST conservar su contrato (rutas, campos, formatos y códigos de respuesta): la actualización es aditiva y no rompe a ningún consumidor actual.
-- **FR-021**: El frontend de la spec 002 MUST funcionar sin modificaciones obligatorias contra el servicio con persistencia.
+- **FR-021**: El frontend de la spec 002 MUST seguir funcionando contra el servicio con persistencia, sin cambios obligatorios para la persistencia en sí; los únicos cambios de frontend de esta feature son los del CUIL (FR-035 a FR-039), y sus pruebas existentes MUST seguir pasando sin modificar sus expectativas previas.
 - **FR-022**: Un cliente creado, modificado o eliminado MUST reflejarse de inmediato en la cartera, en el resumen por nivel y en el score de ese cliente, sin reiniciar el servicio.
 - **FR-023**: El acceso a datos MUST seguir realizándose a través de la interfaz de acceso existente (adapter), incorporando la nueva fuente persistente como una nueva implementación, sin modificar la lógica de scoring.
 
@@ -187,6 +217,7 @@ Una persona de Customer Success elimina un cliente que ya no corresponde a la ca
 
 ### Key Entities *(include if feature involves data)*
 
+- **Presentación del CUIL**: forma de mostrar el CUIL con guiones (`XX-XXXXXXXX-X`) en el dashboard; se deriva de los 11 dígitos recibidos y no se almacena ni se envía a la API.
 - **Cliente**: empresa de la cartera. Tiene un identificador único e inmutable, un CUIL único (texto de 11 dígitos, editable, ficticio), un nombre ficticio opcional y las cuatro métricas (uso, tickets de soporte, NPS, días hasta la renovación). Es el único dato que se persiste; los resultados de scoring se calculan al consultar y no se almacenan.
 - **Cartera**: conjunto de todos los clientes persistidos. Su evaluación (resultados por cliente y resumen por nivel) se calcula con el motor de scoring en cada consulta.
 - **Carga inicial**: operación que incorpora a la cartera los clientes ficticios del archivo de datos actual. No es un cliente; es un proceso que debe ser repetible sin efectos secundarios.
@@ -201,12 +232,12 @@ Una persona de Customer Success elimina un cliente que ya no corresponde a la ca
 - **SC-003**: Tras reiniciar el servicio, el 100 % de los clientes y de los cambios hechos permanece, y la cantidad de clientes no varía por la carga inicial.
 - **SC-004**: Ejecutar la carga inicial 5 veces seguidas deja la cartera exactamente igual que ejecutarla una vez (cero duplicados, cero modificaciones).
 - **SC-005**: El 100 % de las entradas inválidas probadas (cada métrica en su límite inferior −1 y superior +1, decimales, textos, faltantes, campos extra) se rechaza y deja la cartera intacta.
-- **SC-006**: El dashboard de la spec 002 completa sus flujos principales (ver cartera, ver detalle, calcular nuevo cliente, ver configuración) sin ningún cambio en su código.
+- **SC-006**: El dashboard de la spec 002 completa sus flujos principales (ver cartera, ver detalle, calcular nuevo cliente, ver configuración) contra el servicio con persistencia, sin cambios de código atribuibles a la persistencia; solo se agrega la presentación del CUIL (SC-012).
 - **SC-007**: Una persona completa el ciclo crear → consultar → actualizar → eliminar un cliente en menos de 2 minutos usando solo la documentación interactiva de la API.
 - **SC-008**: Con una cartera de 1000 clientes, la consulta de la cartera completa responde en menos de 2 segundos.
 - **SC-009**: La suite de pruebas automatizadas pasa completa, incluidas las pruebas de las specs 001 y 002, sin modificar sus expectativas de contrato.
 - **SC-010**: El 100 % de los 20 clientes cargados inicialmente tiene un CUIL distinto, de 11 dígitos y con dígito verificador válido, y ejecutar la carga inicial varias veces conserva siempre los mismos valores.
-- **SC-011**: El 100 % de los CUIL inválidos probados (longitud distinta de 11, caracteres no numéricos, guiones mal ubicados, dígito verificador alterado en cada posible valor distinto del correcto, nulo, vacío) se rechaza con 422, y el 100 % de los duplicados (alta y actualización, con y sin guiones) se rechaza con 409, sin modificar la cartera.
+- **SC-011**: El 100 % de los CUIL inválidos probados (longitud distinta de 11, caracteres no numéricos, guiones mal ubicados, dígito verificador alterado en cada posible valor distinto del correcto, nulo, vacío) se rechaza con 422, y el 100 % de los duplicados (alta y actualización, con y sin guiones) se rechaza con 409, sin modificar la cartera.- **SC-012**: El 100 % de los 20 clientes de la cartera muestra su CUIL con guiones en la tabla, en las tarjetas por categoría y en el detalle; buscar por cualquier CUIL (con o sin guiones) devuelve exactamente a ese cliente; y las pruebas del frontend (existentes y nuevas) pasan completas.
 
 ## Assumptions
 
@@ -215,13 +246,14 @@ Una persona de Customer Success elimina un cliente que ya no corresponde a la ca
 - El CUIL es obligatorio y editable; el identificador de cliente (p. ej. `C-001`) se mantiene como clave de las rutas y es inmutable, por lo que los endpoints y el frontend existentes no cambian. No se incorpora DNI.
 - El sistema valida formato y dígito verificador, pero no consulta si el CUIL existe en un registro oficial ni impone reglas de prefijo (tipo de persona); eso queda fuera de alcance.
 - Aún no existe un almacenamiento previo con clientes sin CUIL (la base se crea con esta feature); la "migración" consiste en asignar CUIL ficticios a los 20 clientes del archivo de datos y cargarlos. Una migración de esquema sobre una base ya existente queda fuera de alcance.
-- El CUIL se devuelve siempre normalizado a 11 dígitos; mostrarlo con guiones (`20-90000001-5`) es responsabilidad de quien lo presente, p. ej. el frontend en una mejora posterior.
+- El CUIL se devuelve siempre normalizado a 11 dígitos; mostrarlo con guiones (`20-90000001-5`) es responsabilidad de quien lo presente, y en esta feature lo hace el frontend (FR-036).
+- El alcance del frontend en esta feature es solo de lectura: mostrar y buscar por CUIL. Los campos y flujos de los formularios no cambian.
 - La actualización de un cliente reemplaza su CUIL, nombre y métricas completos; el identificador es inmutable. Si en el plan se decide admitir actualización parcial, no cambia las reglas de validación.
 - Como el CRUD solo guarda datos válidos, la cartera persistida normalmente no contendrá registros inválidos; el contrato de la cartera sigue admitiendo el campo de errores por compatibilidad con las specs 001 y 002.
 - La eliminación es definitiva (no hay papelera ni historial); el seguimiento histórico sigue fuera de alcance, como en la spec 001.
 - El nombre del cliente es opcional, de texto libre y ficticio; el identificador es un texto no vacío definido por quien crea el cliente.
 - Los resultados de scoring no se persisten: se calculan al consultar con la configuración activa en ese momento.
-- Cambiar el frontend para ofrecer crear, editar o eliminar clientes (incluido habilitar "Guardar en cartera") queda fuera de alcance de esta feature; es una mejora posterior que consumirá esta API.
+- Cambiar el frontend para ofrecer crear, editar o eliminar clientes (incluido ingresar o editar el CUIL en un formulario y habilitar "Guardar en cartera") queda fuera de alcance de esta feature; es una mejora posterior que consumirá esta API. En esta feature el frontend solo muestra el CUIL y permite buscar por él.
 - Migraciones de esquema avanzadas, múltiples bases de datos, paginación, ordenamiento y filtros del listado quedan fuera de alcance de esta versión.
 - La edición de pesos, umbrales y la configuración del scoring siguen fuera de alcance y se gestionan como en la spec 001.
 - Las decisiones tecnológicas (FastAPI, SQLite, SQLAlchemy) se justifican en el plan de implementación según el Principio I de la constitución, no en esta especificación.
