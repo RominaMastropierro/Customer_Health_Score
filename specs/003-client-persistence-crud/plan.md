@@ -51,7 +51,7 @@ Enfoque técnico (detalle en [research.md](research.md)):
 
 **Testing**: pytest + httpx (backend); Vitest + Testing Library (frontend, existentes)
 
-**Target Platform**: servicio local / servidor Linux o Windows con Python; navegador moderno
+**Target Platform**: servicio local / servidor Linux o Windows con Python; navegador moderno; contenedores Docker en un único host (US7)
 
 **Project Type**: web-service (backend `src/health_score`) + web app (`frontend/`)
 
@@ -72,6 +72,20 @@ bases existentes están fuera de alcance (spec, Assumptions); el esquema se crea
 `metadata.create_all`. El frontend no suma dependencias: el formateo del CUIL es una función
 de pocas líneas.
 
+### Justificación de tecnologías de despliegue (Principio I, US7)
+
+| Tecnología | Problema que resuelve | Alternativa descartada |
+|------------|-----------------------|------------------------|
+| Docker + Compose | Levantar API y dashboard con un comando, en un entorno reproducible y con los controles OWASP de la constitución (v2.2.0) | Instrucciones manuales con venv y `npm run dev`: siguen documentadas, pero no aíslan ni endurecen la ejecución |
+| `nginxinc/nginx-unprivileged` (imagen `web`) | Servir el bundle estático de Vite y reenviar `/api` a la API con el mismo contrato que el proxy de desarrollo, sin CORS ni cambios en el frontend | `vite preview` (no es un servidor de producción y requiere Node en la imagen final); servir los estáticos desde FastAPI (mezcla responsabilidades y agrega código a la API) |
+
+No son dependencias de la aplicación: no cambian `pyproject.toml` ni `package.json`. Las
+imágenes base se fijan por tag y digest en el `Dockerfile`.
+
+**Excepciones documentadas** (detalle en `SECURITY-DOCKER.md`): sin `--require-hashes` porque
+no hay lockfile con hashes (pendiente, T064); `USER root` transitorio en la imagen `web` para
+crear el usuario 10001, que termina siendo el usuario final.
+
 ## Constitution Check
 
 *GATE: debe pasar antes de Phase 0. Re-evaluado tras el diseño de Phase 1.*
@@ -87,7 +101,8 @@ de pocas líneas.
 | VII | Pruebas | Sí | Casos normales, límite e inválidos de métricas y de CUIL; duplicados; UUID generado; idempotencia; reinicios; `cuil` en cartera/score; pruebas de frontend del CUIL |
 | VIII | API documentada | Sí | Endpoints con modelos y respuestas 404/409/422 declaradas; `cuil` documentado en `StoredClientScoreResult`; 503 declarado; ver [contracts](contracts/http-api-changes.md) |
 | IX | Privacidad | Sí | CUIL sintéticos (`20` + `9000000n` + dígito calculado), también en los fixtures del frontend; regla de generación determinista y documentada |
-| X | Incremental | Sí | Historias P1 → P2, cada una demostrable ([quickstart](quickstart.md)); US6 (frontend) se demuestra sola sobre US1/US2 |
+| X | Incremental | Sí | Historias P1 → P2 → P3, cada una demostrable ([quickstart](quickstart.md)); US6 (frontend) se demuestra sola sobre US1/US2; US7 (contenedores) sobre US1–US6 |
+| — | Contenedores y despliegue (v2.2.0) | Sí, con 2 excepciones documentadas | Bases fijadas por digest, multi-stage, UID 10001, `cap_drop: [ALL]`, `no-new-privileges`, FS de solo lectura, volumen solo para la base, red `backend` interna, límites y logs con rotación. Excepciones arriba y en `SECURITY-DOCKER.md` |
 
 Sin violaciones; no se requiere Complexity Tracking.
 
@@ -162,7 +177,14 @@ tests/
 
 pyproject.toml               # + dependencia sqlalchemy>=2.0
 .gitignore                   # + data/*.db
-README.md                    # documenta HEALTH_SCORE_DB, los endpoints nuevos y el UUID
+README.md                    # documenta HEALTH_SCORE_DB, los endpoints nuevos, el UUID y Docker
+
+Dockerfile                   # NUEVO (US7): targets `api` y `web`, multi-stage, UID 10001
+compose.yaml                 # NUEVO (US7): endurecimiento en ejecución, volumen dbdata, red interna
+.dockerignore                # NUEVO (US7): fuera .git, .env, claves, *.db, node_modules
+.hadolint.yaml               # NUEVO (US7): lint del Dockerfile
+SECURITY-DOCKER.md           # NUEVO (US7): control → regla OWASP, excepciones, tareas del host
+frontend/nginx.conf          # NUEVO (US7): estáticos + proxy /api → api:8000, temporales en /tmp
 ```
 
 **Structure Decision**: se mantiene el proyecto existente (`src/health_score` + `frontend/`).

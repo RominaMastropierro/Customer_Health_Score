@@ -1,17 +1,18 @@
 <!--
 Sync Impact Report
-- Cambio de versión: 2.0.0 → 2.1.0 (MINOR: ampliación sustancial de Restricciones Técnicas)
-- Principios modificados:
-  I. Simplicidad y Mantenibilidad (sin cambio de título): la preferencia por la biblioteca
-     estándar se acota al backend; en el frontend se prioriza el stack aprobado.
+- Cambio de versión: 2.1.0 → 2.2.0 (MINOR: nueva subsección y ampliación de las puertas de
+  calidad; no se elimina ni redefine ningún principio)
+- Principios modificados: ninguno
+- Secciones añadidas:
+  Restricciones Técnicas › Contenedores y despliegue: la ejecución en contenedores sigue el
+  OWASP Docker Security Cheat Sheet; las excepciones se documentan.
 - Secciones modificadas:
-  Restricciones Técnicas: se reorganiza en Backend y Frontend y se fija el stack del
-  frontend (Vite + React, Tailwind CSS, shadcn/ui, Recharts).
-- Motivo: definir el stack tecnológico del frontend del proyecto.
-- Secciones añadidas: ninguna (subsecciones Backend/Frontend dentro de Restricciones Técnicas)
+  Flujo de Desarrollo y Puertas de Calidad: se agregan hadolint, escaneo de imagen y revisión
+  de Dockerfile/compose contra el checklist OWASP.
 - Secciones eliminadas: ninguna
-- Artefactos dependientes: los plan.md existentes que mencionen tecnologías de UI deben
-  revisarse para alinearse con el stack aprobado.
+- Motivo: el proyecto se dockerizó (API + dashboard) con artefactos endurecidos.
+- Artefactos dependientes: specs/003-client-persistence-crud (spec.md, plan.md, tasks.md)
+  deben reflejar el despliegue en contenedores y justificar Docker/nginx según el Principio I.
 - TODOs diferidos: ninguno
 -->
 
@@ -156,6 +157,32 @@ permiten mostrar valor en cada iteración.
 - El frontend MUST consumir datos y resultados del scoring exclusivamente a través de la API
   (Principio II); MUST NOT reimplementar ni duplicar lógica de scoring.
 
+### Contenedores y despliegue
+
+- La ejecución en contenedores MUST seguir el OWASP Docker Security Cheat Sheet. Como
+  mínimo:
+  - imágenes base fijadas por tag **y** digest, nunca `latest`, y renovadas periódicamente;
+  - builds multi-stage: compiladores y herramientas de build MUST NOT llegar a la imagen
+    final;
+  - usuario no-root con UID/GID numérico fijo, igual en el Dockerfile y en compose;
+  - `cap_drop: [ALL]` (solo se agregan capabilities demostradamente necesarias) y
+    `no-new-privileges:true`;
+  - sistema de archivos raíz de solo lectura, con `tmpfs` para temporales; solo los
+    volúmenes de datos (p. ej. la base SQLite) son escribibles y el resto se monta `:ro`;
+  - límites de memoria, CPU, procesos y archivos abiertos, y reinicio acotado;
+  - redes dedicadas, con las de backend marcadas como internas y solo los puertos
+    imprescindibles publicados;
+  - secretos mediante Docker secrets o montajes secretos de BuildKit; MUST NOT incluirse en
+    `ENV`, `ARG` ni en la imagen;
+  - logs a stdout/stderr con rotación.
+- Está prohibido montar `/var/run/docker.sock`, usar `privileged: true`,
+  `network_mode: host` o perfiles seccomp/AppArmor `unconfined`.
+- Toda excepción a estas reglas MUST documentarse junto al control afectado y en el plan,
+  con su justificación.
+
+**Justificación**: un contenedor endurecido por defecto limita el impacto de una
+vulnerabilidad en la aplicación o en sus dependencias.
+
 ### Otras tecnologías
 
 - Cualquier tecnología adicional (otras bibliotecas de UI o de gráficos, bases de datos,
@@ -174,7 +201,11 @@ permiten mostrar valor en cada iteración.
   - no hay pesos ni umbrales hardcodeados fuera del JSON de configuración;
   - los endpoints nuevos o modificados aparecen correctamente en OpenAPI;
   - no se introdujeron datos reales de clientes;
-  - toda dependencia nueva está justificada en el plan.
+  - toda dependencia nueva está justificada en el plan;
+  - los cambios en `Dockerfile` o `compose.yaml` se revisaron contra el checklist OWASP y
+    `hadolint` no reporta errores.
+- Antes de publicar una imagen MUST escanearse (Trivy o Grype) y no presentar
+  vulnerabilidades HIGH o CRITICAL sin una justificación documentada.
 
 ## Governance
 
@@ -191,4 +222,4 @@ permiten mostrar valor en cada iteración.
 - **Cumplimiento**: cada plan y cada revisión de cambios MUST verificar el cumplimiento de esta
   constitución. Toda complejidad adicional MUST justificarse explícitamente.
 
-**Version**: 2.1.0 | **Ratified**: 2026-10-10 | **Last Amended**: 2026-10-11
+**Version**: 2.2.0 | **Ratified**: 2026-10-10 | **Last Amended**: 2026-10-22

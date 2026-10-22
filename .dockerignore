@@ -1,0 +1,51 @@
+# Control de versiones, CI y herramientas del repositorio
+.git
+.gitignore
+.github
+.claude
+.specify
+specs
+docs
+
+# Secretos y configuración local  [#13]
+.env
+.env.*
+*.pem
+*.key
+*.p12
+id_rsa*
+secrets/
+.aws
+.ssh
+.pypirc
+**/.npmrc
+# frontend/.npmrc solo contiene reintentos y plazos de red, sin credenciales
+!frontend/.npmrc
+
+# Los propios archivos de Docker
+Dockerfile*
+compose*.y*ml
+.dockerignore
+.hadolint.yaml
+
+# Bases SQLite y datos generados en ejecución (nunca dentro de la imagen)
+data/*.db
+data/*.db-*
+tmp
+
+# Basura de build y desarrollo
+**/node_modules
+frontend/dist
+**/__pycache__
+**/*.pyc
+*.egg-info
+.venv
+venv
+.pytest_cache
+.idea
+.vscode
+*.log
+tests
+scripts
+package-lock.json
+!frontend/package-lock.json

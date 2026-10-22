@@ -1,0 +1,70 @@
+# Ejecución endurecida de Customer Health Score. Los números de regla corresponden al
+# OWASP Docker Security Cheat Sheet.
+#   docker compose up -d --build   ->  http://127.0.0.1:8080
+name: health-score
+
+# Endurecimiento común a ambos servicios
+x-hardening: &hardening
+  init: true                            # recoge procesos zombi y reenvía señales
+  user: "10001:10001"                   # [#2] coincide con el Dockerfile
+  read_only: true                       # [#8] sistema de archivos raíz inmutable
+  cap_drop: [ALL]                       # [#3] ningún servicio necesita capabilities
+  security_opt:
+    - no-new-privileges:true            # [#4]
+    # se mantienen seccomp/AppArmor por defecto; nunca usar *=unconfined  [#6]
+  pids_limit: 200                       # [#7] protección contra fork bombs
+  ulimits:
+    nofile: { soft: 1024, hard: 2048 }  # [#7]
+  restart: on-failure:5                 # [#7] reinicios acotados
+  logging:                              # [#10] logs a stdout/stderr con rotación
+    driver: json-file
+    options: { max-size: "10m", max-file: "5" }
+
+services:
+  api:
+    <<: *hardening
+    build:
+      context: .
+      target: api
+    image: health-score-api:${VERSION:-dev}
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m   # [#8]
+    volumes:
+      # Única ruta escribible persistente: la base SQLite (y sus archivos -journal)  [#8]
+      - dbdata:/var/lib/health-score
+      # Permite cambiar pesos/umbrales sin reconstruir (editar y reiniciar); solo lectura  [#8]
+      - ./config/scoring.json:/app/config/scoring.json:ro
+    mem_limit: 512m                     # [#7]
+    memswap_limit: 512m                 # [#7] sin swap
+    cpus: "1.0"                         # [#7]
+    # Sin `ports:`: la API solo es accesible desde la red interna, a través de web  [#5]
+    networks: [backend]
+
+  web:
+    <<: *hardening
+    build:
+      context: .
+      target: web
+    image: health-score-web:${VERSION:-dev}
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=32m   # [#8] pid y temporales de nginx
+    mem_limit: 128m                     # [#7]
+    memswap_limit: 128m                 # [#7]
+    cpus: "0.5"                         # [#7]
+    ports:
+      - "127.0.0.1:8080:8080"           # [#5] solo loopback; en producción, proxy TLS delante
+    networks: [frontend, backend]
+    depends_on:
+      api:
+        condition: service_healthy
+
+networks:
+  frontend: {}
+  backend:
+    internal: true                      # [#5] sin salida a internet e inaccesible desde fuera
+
+volumes:
+  dbdata: {}
+
+# No hay secretos: SQLite no usa credenciales. Si se agregan (p. ej. una base remota),
+# usar `secrets:` montados en /run/secrets, nunca variables de entorno  [#13]

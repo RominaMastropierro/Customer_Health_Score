@@ -1,0 +1,30 @@
+# syntax=docker/dockerfile:1.7
+# Fijar por tag Y digest  [#0, #9]
+ARG NODE_IMAGE=node:20-bookworm-slim@sha256:<PIN_ME>
+
+# ---------- dependencias ----------
+FROM ${NODE_IMAGE} AS deps
+WORKDIR /build
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts
+
+# ---------- runtime ----------
+FROM ${NODE_IMAGE} AS runtime
+LABEL org.opencontainers.image.source="<REPO_URL>" \
+      org.opencontainers.image.version="<VERSION>"
+ENV NODE_ENV=production
+
+# UID numérico alto y explícito en vez del usuario 'node' por defecto  [#2]
+RUN groupadd --system --gid 10001 app \
+ && useradd  --system --uid 10001 --gid app --no-create-home --shell /usr/sbin/nologin app
+
+WORKDIR /app
+COPY --from=deps  --chown=10001:10001 /build/node_modules ./node_modules
+COPY --chown=10001:10001 . .
+
+USER 10001:10001
+EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+  CMD ["node", "-e", "fetch('http://127.0.0.1:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+# Ejecutar node directamente (no npm) para que SIGTERM se gestione; `init: true` en compose recoge procesos hijos
+ENTRYPOINT ["node", "server.js"]

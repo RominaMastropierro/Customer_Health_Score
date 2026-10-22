@@ -1,0 +1,65 @@
+# Configuración de ejecución endurecida. Los números de regla corresponden al OWASP Docker Security Cheat Sheet.
+name: myapp
+
+services:
+  app:
+    build:
+      context: .
+      target: runtime
+    image: myapp:${VERSION:-dev}
+    init: true                          # recoge procesos zombi y reenvía señales
+    user: "10001:10001"                 # [#2] debe coincidir con el Dockerfile
+    read_only: true                     # [#8] sistema de archivos raíz inmutable
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m   # [#8] único espacio escribible
+    cap_drop: [ALL]                     # [#3]
+    # cap_add: [NET_BIND_SERVICE]       # solo si es imprescindible; preferir puerto >1024
+    security_opt:
+      - no-new-privileges:true          # [#4]
+      # se mantienen seccomp/AppArmor por defecto; nunca usar *=unconfined  [#6]
+    mem_limit: 512m                     # [#7]
+    memswap_limit: 512m                 # [#7] sin uso de swap
+    cpus: "1.0"                         # [#7]
+    pids_limit: 200                     # [#7] protección contra fork bombs
+    ulimits:
+      nofile: { soft: 1024, hard: 2048 }   # [#7]
+    restart: on-failure:5               # [#7] reinicios acotados
+    ports:
+      - "127.0.0.1:8080:8080"           # [#5] solo loopback; poner un proxy inverso delante
+    networks: [frontend, backend]
+    secrets: [db_password]              # [#13] montado en /run/secrets/db_password
+    environment:
+      APP_ENV: production
+      DB_PASSWORD_FILE: /run/secrets/db_password   # la app lee el secreto desde archivo, no desde env
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=2)"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    logging:                            # [#10] logs acotados; la app escribe en stdout/stderr
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+
+  # Ejemplo de servicio auxiliar en red solo interna  [#5]
+  # db:
+  #   image: postgres:16-bookworm@sha256:<PIN_ME>
+  #   user: "999:999"
+  #   cap_drop: [ALL]
+  #   security_opt: ["no-new-privileges:true"]
+  #   read_only: true
+  #   tmpfs: ["/tmp", "/run/postgresql"]
+  #   volumes: ["dbdata:/var/lib/postgresql/data"]
+  #   networks: [backend]
+
+networks:
+  frontend: {}
+  backend:
+    internal: true                      # sin salida a internet e inaccesible desde fuera  [#5]
+
+secrets:
+  db_password:
+    file: ./secrets/db_password.txt     # mantener fuera de git
+
+# volumes:
+#   dbdata: {}

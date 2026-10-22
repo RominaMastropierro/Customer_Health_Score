@@ -43,6 +43,28 @@ Para volver a empezar de cero, detener la API y borrar ese archivo. Los pasos de
 solo hacen falta la primera vez; después alcanza con activar el entorno y correr `uvicorn` y
 `npm run dev`.
 
+## Levantar con Docker
+
+Alternativa a las dos terminales: no requiere Python ni Node.js, solo Docker con Compose.
+
+```powershell
+docker compose up -d --build     # dashboard en http://127.0.0.1:8080
+docker compose logs -f api       # ver los logs de la API
+docker compose down              # detener (la cartera se conserva)
+docker compose down -v           # detener y borrar la base (la carga inicial se repite)
+```
+
+- Se construyen dos imágenes desde el [Dockerfile](Dockerfile): `api` (FastAPI) y `web`
+  (dashboard compilado servido por nginx, que reenvía `/api` a la API).
+- La API no publica puertos: solo se accede a través del dashboard (`/api/...`, por ejemplo
+  `http://127.0.0.1:8080/api/portfolio`). La documentación interactiva (`/docs`) no está
+  disponible por esta vía; para usarla, levantar la API localmente como se indica arriba.
+- La base SQLite vive en el volumen `dbdata`. Para cambiar pesos o umbrales, editar
+  [config/scoring.json](config/scoring.json) y ejecutar `docker compose restart api`.
+- Los contenedores corren sin privilegios y con el sistema de archivos de solo lectura,
+  según el OWASP Docker Security Cheat Sheet. El detalle de cada control, las excepciones y
+  lo que hay que configurar en el host están en [SECURITY-DOCKER.md](SECURITY-DOCKER.md).
+
 ## Instalación
 
 Requiere Python 3.12 o superior.

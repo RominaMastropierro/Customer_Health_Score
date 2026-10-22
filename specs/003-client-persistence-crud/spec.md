@@ -14,6 +14,10 @@
 
 - Q: ¿Quién define el identificador (`client_id`) al crear un cliente? → A: Lo genera el servicio con la biblioteca nativa `uuid` (UUID versión 4, texto canónico en minúsculas) antes de persistirlo. El alta no recibe `client_id`; los 20 clientes de la carga inicial conservan sus identificadores actuales (`C-001` … `C-020`).
 
+### Session 2026-10-22
+
+- Q: ¿Cómo se despliega el servicio con persistencia? → A: Además de la ejecución local, en contenedores endurecidos según el OWASP Docker Security Cheat Sheet (constitución v2.2.0, *Contenedores y despliegue*): una imagen para la API y otra para el dashboard compilado servido por nginx, que reenvía `/api` a la API. La base SQLite vive en un volumen persistente, que es la única ruta escribible.
+
 **Depende de**: [001-customer-health-scoring](../001-customer-health-scoring/spec.md) (motor de scoring y su interfaz de servicio) y [002-health-score-dashboard](../002-health-score-dashboard/spec.md) (interfaz que consume la cartera).
 
 ## User Scenarios & Testing *(mandatory)*
@@ -139,6 +143,25 @@ Una persona de Customer Success ve el CUIL de cada cliente en el dashboard, con 
 
 ---
 
+### User Story 7 - Levantar el sistema en contenedores endurecidos (Priority: P3)
+
+Una persona del equipo levanta la API y el dashboard con un solo comando de contenedores, sin instalar Python ni Node.js. Los contenedores siguen las reglas de seguridad de la constitución: corren sin privilegios, con el sistema de archivos de solo lectura y sin exponer la API fuera de la red interna. La cartera persiste entre reinicios de los contenedores igual que entre reinicios del servicio.
+
+**Why this priority**: no agrega funcionalidad de negocio, pero hace la feature demostrable en un entorno reproducible y seguro por defecto. Depende de US1–US6 ya implementadas.
+
+**Independent Test**: con un volumen de datos nuevo, se levantan los contenedores, se abre el dashboard en `http://127.0.0.1:8080`, se crea un cliente por `/api/clients`, se reinician los contenedores y el cliente sigue presente; se inspecciona la configuración y se verifica usuario no-root, capabilities eliminadas y sistema de archivos de solo lectura.
+
+**Acceptance Scenarios**:
+
+1. **Given** un volumen de datos vacío, **When** se levantan los contenedores, **Then** la API ejecuta la carga inicial y el dashboard muestra los 20 clientes con sus CUIL.
+2. **Given** los contenedores en marcha, **When** el dashboard llama a `/api/...`, **Then** recibe las mismas respuestas que el servicio local, sin cambios de código en el frontend.
+3. **Given** clientes creados o modificados, **When** se reinician o recrean los contenedores conservando el volumen, **Then** los cambios siguen presentes y la carga inicial no se repite.
+4. **Given** los contenedores en marcha, **When** se intenta acceder a la API desde el host sin pasar por el dashboard, **Then** no hay puerto publicado para ella; el dashboard solo escucha en la interfaz de loopback.
+5. **Given** cualquiera de los dos contenedores, **When** se inspecciona, **Then** el proceso corre con UID 10001, sin capabilities, con `no-new-privileges` y con el sistema de archivos raíz de solo lectura; la única ruta escribible persistente es la de la base.
+6. **Given** un cambio en `config/scoring.json` del repositorio, **When** se reinicia el contenedor de la API, **Then** se aplica la nueva configuración sin reconstruir la imagen; el contenedor no puede modificar ese archivo.
+
+---
+
 ### Edge Cases
 
 - ¿Qué pasa si el almacenamiento está vacío porque se eliminaron todos los clientes (no porque sea la primera vez)? La carga inicial no debe volver a ejecutarse y repoblar la cartera: la cartera queda vacía y el dashboard muestra su estado vacío.
@@ -158,6 +181,9 @@ Una persona de Customer Success ve el CUIL de cada cliente en el dashboard, con 
 - ¿Qué pasa si el frontend recibe un CUIL que no tiene exactamente 11 dígitos (dato inesperado)? Se muestra tal cual lo recibió, sin formatear ni fallar.
 - ¿Qué pasa si el CUIL es muy largo para el espacio disponible en pantallas angostas? Se muestra completo sin truncarse (tiene ancho fijo de 13 caracteres con guiones); la tabla puede desplazarse horizontalmente como ya lo hace.
 - ¿Qué pasa con un cuerpo de solicitud que no es JSON válido? Se rechaza con un error de validación en el mismo formato que el resto de la API.
+- ¿Qué pasa si se recrean los contenedores con un volumen de datos nuevo? Es equivalente a borrar la base: se ejecuta otra vez la carga inicial de los 20 clientes.
+- ¿Qué pasa si la API todavía no está lista cuando arranca el dashboard? El dashboard espera a que el healthcheck de la API pase antes de arrancar.
+- ¿Qué pasa si `config/scoring.json` montado en el contenedor es inválido? La API no arranca, igual que en ejecución local (spec 001), y el error queda en los logs del contenedor.
 
 ## Requirements *(mandatory)*
 
@@ -217,6 +243,16 @@ Una persona de Customer Success ve el CUIL de cada cliente en el dashboard, con 
 - **FR-022**: Un cliente creado, modificado o eliminado MUST reflejarse de inmediato en la cartera, en el resumen por nivel y en el score de ese cliente, sin reiniciar el servicio.
 - **FR-023**: El acceso a datos MUST seguir realizándose a través de la interfaz de acceso existente (adapter), incorporando la nueva fuente persistente como una nueva implementación, sin modificar la lógica de scoring.
 
+**Despliegue en contenedores**
+
+- **FR-040**: El sistema MUST poder ejecutarse en contenedores con dos imágenes: la API y el dashboard compilado, servido por un servidor web que reenvía `/api/...` a la API con el mismo contrato que el proxy de desarrollo (sin cambios en el frontend).
+- **FR-041**: Los artefactos de contenedores (`Dockerfile`, `compose.yaml`, `.dockerignore`, configuración del servidor web) MUST cumplir la sección *Contenedores y despliegue* de la constitución: imágenes base fijadas por tag y digest, build multi-stage, usuario no-root con UID 10001 en ambas imágenes, `cap_drop: [ALL]`, `no-new-privileges`, sistema de archivos raíz de solo lectura con `tmpfs`, límites de recursos, reinicio acotado y logs con rotación.
+- **FR-042**: La base SQLite MUST guardarse en un volumen persistente que sea la única ruta escribible de la API; el código, los datos semilla y la configuración del scoring MUST ser de solo lectura para el proceso.
+- **FR-043**: La API MUST NOT publicar puertos hacia el host; solo es accesible desde una red interna de backend. El dashboard MUST publicarse solo en la interfaz de loopback (`127.0.0.1`).
+- **FR-044**: Los archivos de base de datos, `.env`, claves y secretos MUST quedar fuera del contexto de build y de las imágenes. Esta feature no usa secretos; si se agregan, MUST usarse Docker secrets.
+- **FR-045**: Cada imagen MUST declarar un healthcheck; el dashboard MUST arrancar solo cuando la API esté sana.
+- **FR-046**: Toda excepción deliberada a los controles OWASP MUST documentarse junto al control afectado y en `SECURITY-DOCKER.md`, con su motivo.
+
 **Documentación y calidad**
 
 - **FR-024**: Todos los endpoints nuevos MUST quedar documentados automáticamente en la especificación OpenAPI, con sus esquemas de entrada y salida y los códigos de respuesta, incluidos 404, 409 y 422.
@@ -247,6 +283,7 @@ Una persona de Customer Success ve el CUIL de cada cliente en el dashboard, con 
 - **SC-010**: El 100 % de los 20 clientes cargados inicialmente tiene un CUIL distinto, de 11 dígitos y con dígito verificador válido, y ejecutar la carga inicial varias veces conserva siempre los mismos valores.
 - **SC-011**: El 100 % de los CUIL inválidos probados (longitud distinta de 11, caracteres no numéricos, guiones mal ubicados, dígito verificador alterado en cada posible valor distinto del correcto, nulo, vacío) se rechaza con 422, y el 100 % de los duplicados (alta y actualización, con y sin guiones) se rechaza con 409, sin modificar la cartera.
 - **SC-012**: El 100 % de los 20 clientes de la cartera muestra su CUIL con guiones en la tabla, en las tarjetas por categoría y en el detalle; buscar por cualquier CUIL (con o sin guiones) devuelve exactamente a ese cliente; y las pruebas del frontend (existentes y nuevas) pasan completas.
+- **SC-013**: Con los contenedores levantados sobre un volumen nuevo, el 100 % de los flujos del quickstart funciona a través de `http://127.0.0.1:8080`; tras recrear los contenedores conservando el volumen, el 100 % de los cambios permanece; el script de auditoría OWASP no reporta señales de alarma ni controles faltantes, `hadolint` no reporta errores y el escaneo de las imágenes no tiene vulnerabilidades HIGH o CRITICAL sin justificar.
 
 ## Assumptions
 
@@ -265,4 +302,5 @@ Una persona de Customer Success ve el CUIL de cada cliente en el dashboard, con 
 - Cambiar el frontend para ofrecer crear, editar o eliminar clientes (incluido ingresar o editar el CUIL en un formulario y habilitar "Guardar en cartera") queda fuera de alcance de esta feature; es una mejora posterior que consumirá esta API. En esta feature el frontend solo muestra el CUIL y permite buscar por él.
 - Migraciones de esquema avanzadas, múltiples bases de datos, paginación, ordenamiento y filtros del listado quedan fuera de alcance de esta versión.
 - La edición de pesos, umbrales y la configuración del scoring siguen fuera de alcance y se gestionan como en la spec 001.
-- Las decisiones tecnológicas (FastAPI, SQLite, SQLAlchemy) se justifican en el plan de implementación según el Principio I de la constitución, no en esta especificación.
+- Las decisiones tecnológicas (FastAPI, SQLite, SQLAlchemy, Docker y nginx) se justifican en el plan de implementación según el Principio I de la constitución, no en esta especificación.
+- El despliegue en contenedores es para un único host (desarrollo local o un servidor detrás de un proxy inverso con TLS). TLS, orquestadores (Kubernetes), registros de imágenes y pipelines de CI quedan fuera de alcance; la configuración del host (Docker rootless o `userns-remap`, `icc=false`, actualizaciones del daemon y del kernel) es responsabilidad de quien opera el host.

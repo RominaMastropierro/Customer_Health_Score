@@ -1,3 +1,4 @@
+
 ---
 
 description: "Task list for 003-client-persistence-crud"
@@ -299,6 +300,26 @@ description: "Task list for 003-client-persistence-crud"
 
 ---
 
+## Phase 10: User Story 7 - Levantar el sistema en contenedores endurecidos (Priority: P3)
+
+**Goal**: API y dashboard en contenedores que cumplen la sección *Contenedores y despliegue* de la constitución v2.2.0 (FR-040 a FR-046).
+
+**Independent Test**: `docker compose up -d --build` con un volumen nuevo; el dashboard en `http://127.0.0.1:8080` muestra los 20 clientes; un cliente creado por `/api/clients` sobrevive a `docker compose down && docker compose up -d`; `docker inspect` muestra UID 10001, `CapDrop: [ALL]`, `ReadonlyRootfs: true`.
+
+- [X] T058 [P] [US7] Crear `Dockerfile` con targets `api` (venv en builder, `uvicorn ... --factory` en el puerto 8000, `HEALTH_SCORE_DB=/var/lib/health-score/health_score.db`, healthcheck sobre `GET /metrics`) y `web` (build de Vite con `npm ci --ignore-scripts`, nginx sin privilegios en el puerto 8080). Bases fijadas por tag y digest; UID/GID 10001; código, semilla y estáticos de root; sin bits setuid. (FR-040, FR-041, FR-042, FR-045)
+- [X] T059 [P] [US7] Crear `frontend/nginx.conf`: `pid` y temporales en `/tmp`, `server_tokens off`, cabeceras de seguridad y CSP, `/healthz`, `location /api/` → `http://api:8000/` (mismo contrato que el proxy de Vite). (FR-040)
+- [X] T060 [P] [US7] Crear `.dockerignore` (fuera `.git`, specs, `.env*`, claves, `secrets/`, `data/*.db`, `node_modules`, tests; se permite `frontend/.npmrc`, que no tiene credenciales). (FR-044)
+- [X] T061 [US7] Crear `compose.yaml`: servicios `api` y `web` con `user: "10001:10001"`, `read_only`, `tmpfs`, `cap_drop: [ALL]`, `no-new-privileges`, límites de memoria/CPU/PIDs/nofile, `restart: on-failure:5`, logs con rotación; volumen `dbdata` como única ruta escribible de la API; `config/scoring.json` montado `:ro`; red `backend` interna; solo `web` publicado en `127.0.0.1:8080`; `web` depende de `api` sano. (FR-041, FR-042, FR-043, FR-045)
+- [X] T062 [P] [US7] Crear `.hadolint.yaml` y ejecutar `.claude/skills/owasp-docker-secure/scripts/audit.sh`: sin señales de alarma, controles requeridos presentes, `docker compose config` válido.
+- [X] T063 [P] [US7] Crear `SECURITY-DOCKER.md` (control → regla OWASP, excepciones, tareas del host) y agregar la sección "Levantar con Docker" al `README.md`. (FR-046)
+- [ ] T064 [US7] Generar un lockfile de Python con hashes (`pip-compile --generate-hashes`) e instalar con `pip install --require-hashes`, para cerrar la excepción documentada en `SECURITY-DOCKER.md`.
+- [ ] T065 [US7] Con el daemon de Docker activo: `docker compose up -d --build` con un volumen nuevo y recorrer los escenarios 1–6 de US7 (carga inicial, `/api` vía nginx, persistencia tras recrear, API sin puerto publicado, `docker inspect` del endurecimiento, cambio de `config/scoring.json` con reinicio).
+- [ ] T066 [US7] Ejecutar `hadolint` y `trivy image` sobre `health-score-api` y `health-score-web`; corregir o justificar en `SECURITY-DOCKER.md` toda vulnerabilidad HIGH/CRITICAL (SC-013, constitución *Puertas de calidad*).
+
+**Checkpoint**: SC-013 verificado.
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
@@ -310,6 +331,7 @@ description: "Task list for 003-client-persistence-crud"
 - **US4 (Phase 6)** y **US5 (Phase 7)**: dependen de US2; son independientes entre sí, salvo que tocan los mismos archivos (`sql.py`, `app.py`, `test_clients_api.py`).
 - **US6 (Phase 8)**: necesita que la cartera devuelva `cuil` (US1) para la demostración real; sus tareas de frontend solo dependen de los fixtures y pueden hacerse en paralelo con US2–US5.
 - **Polish (Phase 9)**: al final.
+- **US7 (Phase 10)**: depende de US1–US6 implementadas; T058–T060 y T062–T063 en paralelo, T061 tras T058/T059; T065 y T066 requieren el daemon de Docker.
 
 ### Within Each User Story
 
@@ -356,6 +378,7 @@ Task: "T020 [US1] compatibilidad en tests/integration/test_contract_compat.py"
 3. US4 → edición; US5 → eliminación.
 4. US6 → CUIL visible y buscable en el dashboard (puede adelantarse en paralelo).
 5. Polish → OpenAPI, rendimiento, README, suite completa.
+6. US7 → contenedores endurecidos (OWASP).
 
 ## Notes
 
