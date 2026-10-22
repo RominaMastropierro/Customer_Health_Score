@@ -8,12 +8,26 @@ import argparse
 import json
 import random
 import sys
+from collections.abc import Iterator
+
+from health_score.cuil import check_digit
 
 # Uno de cada 50 registros se genera fuera de rango para ver también la columna "Inválido".
 INVALID_EVERY = 50
 
 
-def make_client(index: int, rng: random.Random) -> dict:
+def synthetic_cuils() -> Iterator[str]:
+    # Cuerpos 91000001 en adelante: no se cruzan con los de data/clients.json (9000000n) y
+    # quedan por encima de los documentos reales en uso (spec 003, FR-033).
+    body = 91000001
+    while True:
+        digit = check_digit(f"20{body}")
+        if digit is not None:
+            yield f"20{body}{digit}"
+        body += 1
+
+
+def make_client(index: int, cuil: str, rng: random.Random) -> dict:
     metrics = {
         "usage": rng.randint(0, 100),
         "support_tickets": rng.randint(0, 20),
@@ -22,7 +36,12 @@ def make_client(index: int, rng: random.Random) -> dict:
     }
     if index % INVALID_EVERY == 0:
         metrics["usage"] = 100 + rng.randint(1, 50)
-    return {"client_id": f"F-{index:04d}", "name": f"Cliente Ficticio {index}", "metrics": metrics}
+    return {
+        "client_id": f"F-{index:04d}",
+        "cuil": cuil,
+        "name": f"Cliente Ficticio {index}",
+        "metrics": metrics,
+    }
 
 
 def main() -> None:
@@ -32,7 +51,8 @@ def main() -> None:
     args = parser.parse_args()
 
     rng = random.Random(args.seed)
-    clients = [make_client(i, rng) for i in range(1, args.count + 1)]
+    cuils = synthetic_cuils()
+    clients = [make_client(i, next(cuils), rng) for i in range(1, args.count + 1)]
     json.dump(clients, sys.stdout, ensure_ascii=False, indent=1)
     sys.stdout.write("\n")
 

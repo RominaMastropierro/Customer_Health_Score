@@ -32,6 +32,8 @@ export interface FieldError {
 
 export interface ClientScoreResult {
   client_id: string | null
+  // Solo en la cartera almacenada (spec 003); ausente o null en otras respuestas.
+  cuil?: string | null
   name: string | null
   metrics: Record<string, unknown> | null
   result: ScoreResult | null

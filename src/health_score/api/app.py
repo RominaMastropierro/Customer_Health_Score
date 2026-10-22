@@ -1,13 +1,15 @@
 """API HTTP del motor de scoring. Solo traduce HTTP a la interfaz pública del paquete."""
 
+import logging
 import os
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, model_validator
+from sqlalchemy.exc import DatabaseError, SQLAlchemyError
 
 from health_score import (
     ClientMetrics,
@@ -19,10 +21,24 @@ from health_score import (
     score_client,
     score_portfolio,
 )
-from health_score.data import ClientRepository, LocalJsonClientRepository
+from health_score.data import (
+    ClientConflictError,
+    ClientRepository,
+    ClientStore,
+    SqlClientRepository,
+    StorageError,
+    init_schema,
+    make_engine,
+    run_initial_seed,
+)
 from health_score.models import (
+    ClientData,
+    ClientInput,
+    ClientRecord,
     MetricRange,
     RawClient,
+    StoredClientScoreResult,
+    StoredPortfolioResult,
     metric_ranges,
     validate_client_record,
     validation_message,
@@ -33,6 +49,16 @@ CONFIG_ENV = "HEALTH_SCORE_CONFIG"
 DEFAULT_CONFIG_PATH = "config/scoring.json"
 CLIENTS_ENV = "HEALTH_SCORE_CLIENTS"
 DEFAULT_CLIENTS_PATH = "data/clients.json"
+DB_ENV = "HEALTH_SCORE_DB"
+DEFAULT_DB_PATH = "data/health_score.db"
+
+UNAVAILABLE_MESSAGE = "La cartera no está disponible en este momento"
+UNAVAILABLE_RESPONSE = {503: {"description": "No se puede acceder a la base de datos"}}
+NOT_FOUND_RESPONSE = {404: {"description": "El cliente no existe"}}
+CONFLICT_RESPONSE = {409: {"description": "El CUIL (o el identificador) ya pertenece a otro cliente"}}
+INVALID_RESPONSE = {422: {"description": "Algún campo falta, es inválido o no está permitido"}}
+
+logger = logging.getLogger(__name__)
 
 
 class PortfolioRequest(BaseModel):
@@ -52,6 +78,10 @@ class PortfolioRequest(BaseModel):
         return self
 
 
+def not_found(client_id: str) -> HTTPException:
+    return HTTPException(status_code=404, detail=f"Cliente '{client_id}' no encontrado")
+
+
 def get_config(request: Request) -> ScoringConfig:
     return request.app.state.config
 
@@ -60,8 +90,26 @@ def get_repository(request: Request) -> ClientRepository:
     return request.app.state.repository
 
 
+def get_store(request: Request) -> ClientStore:
+    repository = request.app.state.repository
+    # Las pruebas de las specs 001 y 002 usan fuentes de solo lectura (research R8).
+    if not isinstance(repository, ClientStore):
+        raise HTTPException(
+            status_code=501, detail="La fuente de datos configurada no admite escritura"
+        )
+    return repository
+
+
 ConfigDep = Annotated[ScoringConfig, Depends(get_config)]
 RepositoryDep = Annotated[ClientRepository, Depends(get_repository)]
+StoreDep = Annotated[ClientStore, Depends(get_store)]
+
+
+def _stored_result(client: ClientInput, config: ScoringConfig) -> StoredClientScoreResult:
+    # El CUIL no entra al scoring: se agrega al resultado ya calculado (spec 003, FR-034).
+    return StoredClientScoreResult(
+        **score_client_input(client, config).model_dump(), cuil=client.cuil
+    )
 
 
 def create_app(config: ScoringConfig, repository: ClientRepository) -> FastAPI:
@@ -82,6 +130,17 @@ def create_app(config: ScoringConfig, repository: ClientRepository) -> FastAPI:
             for error in exc.errors()
         ]
         return JSONResponse(status_code=422, content={"detail": jsonable_encoder(detail)})
+
+    @app.exception_handler(ClientConflictError)
+    async def client_conflict(_: Request, exc: ClientConflictError) -> JSONResponse:
+        return JSONResponse(status_code=409, content={"detail": exc.message})
+
+    @app.exception_handler(SQLAlchemyError)
+    async def storage_unavailable(_: Request, exc: SQLAlchemyError) -> JSONResponse:
+        # Los conflictos de unicidad ya los traduce el repositorio a 409; aquí llegan solo
+        # fallas del almacenamiento, que nunca deben devolver datos parciales.
+        logger.error("Error de almacenamiento", exc_info=exc)
+        return JSONResponse(status_code=503, content={"detail": UNAVAILABLE_MESSAGE})
 
     @app.post(
         "/score",
@@ -113,31 +172,116 @@ def create_app(config: ScoringConfig, repository: ClientRepository) -> FastAPI:
 
     @app.get(
         "/portfolio",
-        response_model=PortfolioResult,
+        response_model=StoredPortfolioResult,
         tags=["cartera"],
         summary="Evaluar la cartera almacenada",
         description="Evalúa todos los clientes de la cartera almacenada con la "
-        "configuración activa. Los registros inválidos se reportan con sus `errors`.",
+        "configuración activa. Cada resultado incluye el `cuil` del cliente. Los registros "
+        "inválidos se reportan con sus `errors`.",
+        responses=UNAVAILABLE_RESPONSE,
     )
-    def get_portfolio(config: ConfigDep, repository: RepositoryDep) -> PortfolioResult:
-        return score_portfolio(repository.list_clients(), config)
+    def get_portfolio(config: ConfigDep, repository: RepositoryDep) -> StoredPortfolioResult:
+        clients = repository.list_clients()
+        portfolio = score_portfolio(clients, config)
+        return StoredPortfolioResult(
+            results=[_stored_result(client, config) for client in clients],
+            summary=portfolio.summary,
+        )
 
     @app.get(
         "/clients/{client_id}/score",
-        response_model=ClientScoreResult,
+        response_model=StoredClientScoreResult,
         tags=["cartera"],
         summary="Evaluar un cliente de la cartera almacenada",
         description="Busca el cliente por `client_id` en la cartera almacenada y "
-        "devuelve su resultado o sus errores de validación.",
-        responses={404: {"description": "El cliente no existe en la cartera almacenada"}},
+        "devuelve su resultado o sus errores de validación, junto con su `cuil`.",
+        responses={
+            404: {"description": "El cliente no existe en la cartera almacenada"},
+            **UNAVAILABLE_RESPONSE,
+        },
     )
     def get_client_score(
         client_id: str, config: ConfigDep, repository: RepositoryDep
-    ) -> ClientScoreResult:
+    ) -> StoredClientScoreResult:
         client = repository.get_client(client_id)
         if client is None:
-            raise HTTPException(status_code=404, detail=f"Cliente '{client_id}' no encontrado")
-        return score_client_input(client, config)
+            raise not_found(client_id)
+        return _stored_result(client, config)
+
+    @app.post(
+        "/clients",
+        status_code=201,
+        response_model=ClientRecord,
+        tags=["clientes"],
+        summary="Crear un cliente",
+        description="Guarda un cliente nuevo con su CUIL, nombre opcional y métricas. El "
+        "`client_id` lo genera el servicio (UUID) y no se envía en el cuerpo. El CUIL se "
+        "acepta con o sin guiones y se devuelve sin guiones.",
+        responses={**CONFLICT_RESPONSE, **INVALID_RESPONSE, **UNAVAILABLE_RESPONSE},
+    )
+    def post_client(data: ClientData, response: Response, store: StoreDep) -> ClientRecord:
+        record = store.create(data)
+        response.headers["Location"] = f"/clients/{record.client_id}"
+        return record
+
+    @app.get(
+        "/clients",
+        response_model=list[ClientRecord],
+        tags=["clientes"],
+        summary="Listar los clientes",
+        description="Todos los clientes guardados, en orden de alta, con su CUIL.",
+        responses=UNAVAILABLE_RESPONSE,
+    )
+    def list_clients(store: StoreDep) -> list[ClientRecord]:
+        return store.list_records()
+
+    @app.get(
+        "/clients/{client_id}",
+        response_model=ClientRecord,
+        tags=["clientes"],
+        summary="Consultar un cliente",
+        description="Devuelve el identificador, el CUIL, el nombre y las métricas del cliente.",
+        responses={**NOT_FOUND_RESPONSE, **UNAVAILABLE_RESPONSE},
+    )
+    def get_client(client_id: str, store: StoreDep) -> ClientRecord:
+        record = store.get_record(client_id)
+        if record is None:
+            raise not_found(client_id)
+        return record
+
+    @app.put(
+        "/clients/{client_id}",
+        response_model=ClientRecord,
+        tags=["clientes"],
+        summary="Actualizar un cliente",
+        description="Reemplaza CUIL, nombre y métricas; el identificador no cambia y no se "
+        "envía en el cuerpo. El CUIL nuevo se valida igual que en el alta.",
+        responses={
+            **NOT_FOUND_RESPONSE,
+            **CONFLICT_RESPONSE,
+            **INVALID_RESPONSE,
+            **UNAVAILABLE_RESPONSE,
+        },
+    )
+    def put_client(client_id: str, data: ClientData, store: StoreDep) -> ClientRecord:
+        record = store.update(client_id, data)
+        if record is None:
+            raise not_found(client_id)
+        return record
+
+    @app.delete(
+        "/clients/{client_id}",
+        status_code=204,
+        response_class=Response,
+        tags=["clientes"],
+        summary="Eliminar un cliente",
+        description="Elimina el cliente de forma definitiva; su CUIL queda libre.",
+        responses={**NOT_FOUND_RESPONSE, **UNAVAILABLE_RESPONSE},
+    )
+    def delete_client(client_id: str, store: StoreDep) -> Response:
+        if not store.delete(client_id):
+            raise not_found(client_id)
+        return Response(status_code=204)
 
     @app.get(
         "/config",
@@ -165,10 +309,22 @@ def create_app(config: ScoringConfig, repository: ClientRepository) -> FastAPI:
 
 
 def app_from_env() -> FastAPI:
+    """Factory del servicio: `uvicorn health_score.api.app:app_from_env --factory`.
+
+    No se crea la app al importar el módulo para que importarlo (p. ej. en las pruebas) no
+    abra la base ni ejecute la carga inicial.
+    """
     # Una configuración inválida lanza ConfigError aquí, así el servicio no arranca.
     config = load_config(os.environ.get(CONFIG_ENV, DEFAULT_CONFIG_PATH))
-    repository = LocalJsonClientRepository(os.environ.get(CLIENTS_ENV, DEFAULT_CLIENTS_PATH))
-    return create_app(config, repository)
-
-
-app = app_from_env()
+    db_path = os.environ.get(DB_ENV, DEFAULT_DB_PATH)
+    engine = make_engine(f"sqlite:///{db_path}")
+    try:
+        init_schema(engine)
+        report = run_initial_seed(engine, os.environ.get(CLIENTS_ENV, DEFAULT_CLIENTS_PATH))
+    except DatabaseError as exc:
+        raise StorageError(f"No se pudo abrir la base de datos '{db_path}': {exc}") from exc
+    if report is not None:
+        logger.info("Carga inicial: %d clientes insertados", len(report.inserted))
+        for item, reason in report.skipped:
+            logger.warning("Carga inicial: se omitió %s (%s)", item, reason)
+    return create_app(config, SqlClientRepository(engine))

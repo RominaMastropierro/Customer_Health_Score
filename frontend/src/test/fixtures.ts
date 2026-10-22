@@ -1,5 +1,5 @@
 // Datos ficticios solo para tests (FR-005: la app no contiene datos de ejemplo).
-// Nombres tomados de data/clients.json.
+// Nombres y CUIL sintéticos tomados de data/clients.json; C-005 no trae `cuil` a propósito.
 
 import { vi } from "vitest"
 
@@ -9,6 +9,7 @@ export const portfolioFixture: PortfolioResult = {
   results: [
     {
       client_id: "C-001",
+      cuil: "20900000015",
       name: "Acme Ficticia",
       metrics: { usage: 90, support_tickets: 0, nps: 9, days_to_renewal: 300 },
       result: {
@@ -20,6 +21,7 @@ export const portfolioFixture: PortfolioResult = {
     },
     {
       client_id: "C-002",
+      cuil: "20900000023",
       name: "Globex Demo",
       metrics: { usage: 60, support_tickets: 3, nps: 7, days_to_renewal: 90 },
       result: {
@@ -31,6 +33,7 @@ export const portfolioFixture: PortfolioResult = {
     },
     {
       client_id: "C-003",
+      cuil: "20900000031",
       name: "Initech Inventada",
       metrics: { usage: 10, support_tickets: 15, nps: 2, days_to_renewal: 10 },
       result: {
@@ -42,6 +45,7 @@ export const portfolioFixture: PortfolioResult = {
     },
     {
       client_id: "C-004",
+      cuil: "20900000058",
       name: "Umbrella Ejemplo",
       metrics: { usage: 40, support_tickets: 6, nps: 5, days_to_renewal: 60 },
       result: {

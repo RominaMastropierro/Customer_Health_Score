@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest"
 
 import {
   displayName,
+  formatCuil,
   formatMetric,
   groupCount,
   groupOf,
   initials,
+  matchesCuil,
   percent,
   weakestMetric,
 } from "@/lib/display"
@@ -49,5 +51,34 @@ describe("display", () => {
     expect(displayName(invalid)).toBe("C-005")
     expect(initials(displayName(invalid))).toBe("C-")
     expect(initials("Acme Ficticia")).toBe("AC")
+  })
+})
+
+describe("CUIL (spec 003)", () => {
+  it("formatea 11 dígitos con guiones y deja el resto tal cual", () => {
+    expect(formatCuil("20900000015")).toBe("20-90000001-5")
+    expect(formatCuil("123")).toBe("123")
+    expect(formatCuil("2090000001A")).toBe("2090000001A")
+  })
+
+  it("muestra un marcador neutro si no hay CUIL", () => {
+    expect(formatCuil(null)).toBe("—")
+    expect(formatCuil(undefined)).toBe("—")
+  })
+
+  it.each(["20900000015", "20-90000001-5", "90000001", " 9000000 "])(
+    "encuentra el CUIL con la búsqueda %j",
+    (query) => {
+      expect(matchesCuil("20900000015", query)).toBe(true)
+    },
+  )
+
+  it.each(["20900000023", "acme", "", "-"])("no coincide con la búsqueda %j", (query) => {
+    expect(matchesCuil("20900000015", query)).toBe(false)
+  })
+
+  it("no coincide si el cliente no tiene CUIL", () => {
+    expect(matchesCuil(null, "209")).toBe(false)
+    expect(matchesCuil(undefined, "209")).toBe(false)
   })
 })

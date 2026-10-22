@@ -49,3 +49,10 @@ def test_shipped_portfolio_loads_twenty_valid_clients():
     assert len(clients) == 20
     assert all(isinstance(client, Client) for client in clients)
     assert [client.client_id for client in clients] == [f"C-{i:03d}" for i in range(1, 21)]
+
+
+def test_shipped_portfolio_ignores_cuil_key():
+    # El archivo también alimenta la carga inicial de la base (spec 003, research R7).
+    clients = LocalJsonClientRepository("data/clients.json").list_clients()
+    assert len(clients) == 20
+    assert all(isinstance(client, Client) and client.cuil is None for client in clients)

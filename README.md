@@ -17,6 +17,32 @@ Los pesos, los umbrales de nivel y los parámetros de normalización se definen 
 [config/scoring.json](config/scoring.json), no en el código. Todos los datos del repositorio
 son ficticios.
 
+## Levantar el proyecto (resumen)
+
+Requisitos: Python 3.12+ y Node.js 20+. Se usan dos terminales, desde la raíz del repositorio.
+
+**Terminal 1: API** (`http://127.0.0.1:8000`, docs en `/docs`)
+
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -e ".[dev]"
+uvicorn health_score.api.app:app_from_env --factory --reload
+```
+
+**Terminal 2: dashboard** (`http://localhost:5173`)
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+Al primer arranque la API crea `data/health_score.db` y carga los 20 clientes de ejemplo.
+Para volver a empezar de cero, detener la API y borrar ese archivo. Los pasos de instalación
+solo hacen falta la primera vez; después alcanza con activar el entorno y correr `uvicorn` y
+`npm run dev`.
+
 ## Instalación
 
 Requiere Python 3.12 o superior.
@@ -36,7 +62,7 @@ pytest
 ## API
 
 ```powershell
-uvicorn health_score.api.app:app --reload
+uvicorn health_score.api.app:app_from_env --factory --reload
 ```
 
 La documentación interactiva queda en `http://127.0.0.1:8000/docs`.
@@ -45,17 +71,37 @@ La documentación interactiva queda en `http://127.0.0.1:8000/docs`.
 |----------|----------|
 | `POST /score` | Evalúa un cliente a partir de sus métricas |
 | `POST /portfolio/score` | Evalúa una cartera enviada en la solicitud |
-| `GET /portfolio` | Evalúa la cartera almacenada |
-| `GET /clients/{client_id}/score` | Evalúa un cliente de la cartera almacenada |
+| `GET /portfolio` | Evalúa la cartera almacenada; cada resultado incluye el `cuil` |
+| `GET /clients/{client_id}/score` | Evalúa un cliente de la cartera almacenada, con su `cuil` |
+| `POST /clients` | Crea un cliente (CUIL, nombre opcional y métricas) |
+| `GET /clients` | Lista los clientes guardados, en orden de alta |
+| `GET /clients/{client_id}` | Consulta un cliente |
+| `PUT /clients/{client_id}` | Reemplaza el CUIL, el nombre y las métricas de un cliente |
+| `DELETE /clients/{client_id}` | Elimina un cliente |
 | `GET /config` | Muestra la configuración activa |
 | `GET /metrics` | Lista las métricas de entrada y sus rangos válidos |
+
+Sobre el CRUD de clientes:
+
+- El `client_id` de un cliente nuevo lo genera el servicio (UUID v4) y no se envía en el
+  cuerpo; los 20 clientes de la carga inicial conservan `C-001` … `C-020`.
+- El `cuil` es obligatorio y único. Se acepta con o sin guiones (`20900000015` o
+  `20-90000001-5`), se valida el dígito verificador y se devuelve siempre sin guiones.
+- Errores: 422 datos inválidos, 404 cliente inexistente, 409 CUIL ya registrado en otro
+  cliente, 503 base de datos no disponible.
 
 Variables de entorno:
 
 | Variable | Default | Uso |
 |----------|---------|-----|
 | `HEALTH_SCORE_CONFIG` | `config/scoring.json` | Archivo de configuración del scoring |
-| `HEALTH_SCORE_CLIENTS` | `data/clients.json` | Cartera almacenada (datos ficticios) |
+| `HEALTH_SCORE_DB` | `data/health_score.db` | Base SQLite donde se guarda la cartera |
+| `HEALTH_SCORE_CLIENTS` | `data/clients.json` | Archivo de la carga inicial (se usa solo cuando la base nunca fue inicializada) |
+
+La primera vez que arranca, el servicio crea la base y carga los 20 clientes ficticios de
+`data/clients.json`. Los cambios posteriores quedan en la base y sobreviven a los reinicios;
+la carga inicial no vuelve a ejecutarse, ni siquiera si se eliminan todos los clientes. Para
+empezar de cero, detener el servicio y borrar `data/health_score.db`.
 
 ## Frontend
 
@@ -79,7 +125,9 @@ La guía de validación de punta a punta está en
 [specs/002-health-score-dashboard/quickstart.md](specs/002-health-score-dashboard/quickstart.md).
 Para probar el rendimiento con una cartera grande:
 `python scripts/make_fake_portfolio.py 1000 > tmp/clients_1000.json` y levantar la API con
-`HEALTH_SCORE_CLIENTS` apuntando a ese archivo.
+una base nueva: `HEALTH_SCORE_DB` apuntando a un archivo que no exista (p. ej.
+`tmp/health_1000.db`) y `HEALTH_SCORE_CLIENTS` apuntando al archivo generado. Los registros
+fuera de rango que genera el script se omiten en la carga inicial (se informan en el log).
 
 ## Cambiar pesos y umbrales
 

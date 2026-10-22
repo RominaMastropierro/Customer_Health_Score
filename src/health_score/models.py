@@ -12,6 +12,7 @@ from pydantic import (
     model_validator,
 )
 
+from health_score.cuil import Cuil
 from health_score.metrics import METRIC_RANGES, Metric, range_message
 
 
@@ -77,7 +78,13 @@ class FieldError(_Frozen):
 
 
 ClientId = Annotated[
-    str, Field(min_length=1, description="Identificador único del cliente", examples=["C-001"])
+    str,
+    Field(
+        min_length=1,
+        description="Identificador único del cliente: el original en la carga inicial o un "
+        "UUID generado por el servicio",
+        examples=["C-001", "3f2b8c1e-9a4d-4e7b-8c21-5d6f0a9b1c2d"],
+    ),
 ]
 ClientName = Annotated[
     str | None, Field(description="Nombre ficticio del cliente", examples=["Acme Ficticia"])
@@ -88,6 +95,8 @@ class Client(_Frozen):
     """Cliente de la cartera con métricas válidas."""
 
     client_id: ClientId
+    # Identifica al cliente persistido; el scoring lo copia al resultado sin usarlo (spec 003).
+    cuil: str | None = None
     name: ClientName = None
     metrics: ClientMetrics
 
@@ -97,6 +106,7 @@ class InvalidClient(_Frozen):
 
     # None solo cuando el propio registro almacenado no trae un client_id utilizable.
     client_id: str | None
+    cuil: str | None = None
     name: str | None = None
     errors: list[FieldError]
     # Se conserva tal como llegó para que las interfaces muestren el dato que hay que corregir.
@@ -140,6 +150,41 @@ class ClientScoreResult(_Frozen):
         return self
 
 
+class ClientData(_Frozen):
+    """Datos que envía quien crea o edita un cliente. El `client_id` lo genera el servicio."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "cuil": "20900000244",
+                    "name": "Cliente Ficticio",
+                    "metrics": {"usage": 60, "support_tickets": 3, "nps": 7, "days_to_renewal": 90},
+                }
+            ]
+        }
+    )
+
+    cuil: Cuil
+    name: ClientName = None
+    metrics: ClientMetrics
+
+
+class SeedClient(ClientData):
+    """Registro del archivo de la carga inicial: conserva su identificador original."""
+
+    client_id: ClientId
+
+
+class ClientRecord(_Frozen):
+    """Cliente guardado, tal como lo devuelve el CRUD."""
+
+    client_id: ClientId
+    cuil: Annotated[str, Field(description="CUIL, 11 dígitos sin guiones")]
+    name: ClientName = None
+    metrics: ClientMetrics
+
+
 class PortfolioSummary(_Frozen):
     """Conteos de la cartera: Top + Estable + En riesgo + invalid = total."""
 
@@ -163,6 +208,28 @@ class PortfolioResult(_Frozen):
     summary: PortfolioSummary
 
 
+class StoredClientScoreResult(ClientScoreResult):
+    """Resultado de un cliente de la cartera almacenada: suma su CUIL (spec 003, FR-034).
+
+    Es un modelo aparte para que `ClientScoreResult` (respuesta de `POST /portfolio/score`)
+    conserve su contrato exacto de las specs 001 y 002.
+    """
+
+    cuil: Annotated[
+        str | None,
+        Field(description="CUIL del cliente, 11 dígitos sin guiones; null si no lo tiene"),
+    ] = None
+
+
+class StoredPortfolioResult(PortfolioResult):
+    """Resultado de evaluar la cartera almacenada: cada cliente trae su CUIL."""
+
+    results: Annotated[
+        list[StoredClientScoreResult],
+        Field(description="Un resultado por cliente, en orden de alta"),
+    ]
+
+
 _STRUCTURE_MESSAGES = {
     "missing": "campo obligatorio",
     "extra_forbidden": "campo no permitido",
@@ -177,8 +244,12 @@ def validation_message(loc: tuple, error_type: str, default: str) -> str:
     """
     if error_type in _STRUCTURE_MESSAGES:
         return _STRUCTURE_MESSAGES[error_type]
-    if len(loc) == 2 and loc[0] == "body" and loc[1] in {metric.value for metric in Metric}:
+    metric_names = {metric.value for metric in Metric}
+    if len(loc) == 2 and loc[0] == "body" and loc[1] in metric_names:
         return range_message(Metric(loc[1]))
+    # Alta y edición de clientes (spec 003): las métricas llegan anidadas en `metrics`.
+    if len(loc) == 3 and loc[:2] == ("body", "metrics") and loc[2] in metric_names:
+        return range_message(Metric(loc[2]))
     return default
 
 

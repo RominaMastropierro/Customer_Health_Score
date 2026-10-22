@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react"
+import { screen, waitFor, within } from "@testing-library/react"
 import { describe, expect, it } from "vitest"
 
 import App from "@/App"
@@ -60,5 +60,26 @@ describe("Detalle de cliente (US3)", () => {
     await user.keyboard("{Escape}")
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument())
     expect(screen.getByPlaceholderText("Buscar cliente")).toHaveValue("acme")
+  })
+})
+
+describe("CUIL en el detalle (US6, spec 003)", () => {
+  it("muestra el CUIL con guiones junto al identificador", async () => {
+    stub()
+    window.location.hash = "#/cartera/C-001"
+    renderWithProviders(<App />)
+    const heading = await screen.findByRole("heading", { name: "Acme Ficticia" })
+    const header = heading.parentElement!
+    expect(header).toHaveTextContent("C-001")
+    expect(header).toHaveTextContent("20-90000001-5")
+  })
+
+  it("muestra un marcador si la respuesta no trae CUIL", async () => {
+    stub()
+    window.location.hash = "#/cartera/C-005"
+    renderWithProviders(<App />)
+    const dialog = await screen.findByRole("dialog")
+    expect(await screen.findByText("Errores del registro")).toBeInTheDocument()
+    expect(within(dialog).getByRole("heading", { name: "C-005" }).parentElement).toHaveTextContent("—")
   })
 })

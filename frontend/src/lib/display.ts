@@ -98,3 +98,17 @@ export function displayName(entry: Pick<ClientScoreResult, "name" | "client_id">
 export function initials(text: string): string {
   return text.slice(0, 2).toUpperCase()
 }
+
+// CUIL (spec 003): solo presentación. El valor recibido no se altera ni se envía a la API.
+export function formatCuil(value: string | null | undefined): string {
+  if (value === null || value === undefined) return "—"
+  if (!/^\d{11}$/.test(value)) return value
+  return `${value.slice(0, 2)}-${value.slice(2, 10)}-${value.slice(10)}`
+}
+
+// Solo compara búsquedas numéricas, para que buscar un nombre no coincida por CUIL.
+export function matchesCuil(cuil: string | null | undefined, query: string): boolean {
+  const digits = query.trim().replace(/-/g, "")
+  if (!cuil || !/^\d+$/.test(digits)) return false
+  return cuil.includes(digits)
+}

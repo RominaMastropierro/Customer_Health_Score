@@ -89,3 +89,15 @@ describe("Nuevo cliente (US2)", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: /Calculando/ })).toBeDisabled())
   })
 })
+
+describe("Nuevo cliente sin CUIL (US6, spec 003)", () => {
+  it("no muestra CUIL en el resultado de un cliente no guardado", async () => {
+    const { user } = await renderForm({ "POST /api/score": { status: 200, body: RESULT } })
+    // usage 1: pocas pulsaciones en el slider; el resultado lo da el stub, no las métricas.
+    await fill(user, { usage: 1, tickets: "0", nps: 9, days: "300" })
+    await user.click(screen.getByRole("button", { name: "Calcular score" }))
+    expect(await screen.findByText("Resultado")).toBeInTheDocument()
+    expect(document.body).not.toHaveTextContent(/CUIL/)
+    expect(document.body).not.toHaveTextContent(/\d{2}-\d{8}-\d/)
+  })
+})

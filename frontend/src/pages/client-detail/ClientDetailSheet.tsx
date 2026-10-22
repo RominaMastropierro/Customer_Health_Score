@@ -8,7 +8,7 @@ import StatePanel from "@/components/StatePanel"
 import SubScoreBars from "@/components/SubScoreBars"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet"
-import { METRIC_VIEWS, displayName, formatMetric, groupOf, initials } from "@/lib/display"
+import { METRIC_VIEWS, displayName, formatCuil, formatMetric, groupOf, initials } from "@/lib/display"
 
 function Body({ clientId, onClose }: { clientId: string; onClose: () => void }) {
   const { state, reload } = useApi((signal) => getClientScore(clientId, signal), [clientId])
@@ -41,7 +41,9 @@ function Body({ clientId, onClose }: { clientId: string; onClose: () => void }) 
           </span>
           <div>
             <h2 className="text-lg font-semibold">{name}</h2>
-            <p className="text-muted-foreground text-sm">{client.client_id}</p>
+            <p className="text-muted-foreground text-sm">
+              {client.client_id} · <span className="font-mono">{formatCuil(client.cuil)}</span>
+            </p>
           </div>
         </div>
         <LevelBadge group={groupOf(client)} />

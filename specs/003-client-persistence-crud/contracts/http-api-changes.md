@@ -1,8 +1,31 @@
 # Contrato HTTP: cambios de la spec 003
 
 Cambio aditivo (FR-020): `POST /score`, `POST /portfolio/score`, `GET /portfolio`,
-`GET /clients/{client_id}/score`, `GET /config` y `GET /metrics` conservan rutas, campos y
-códigos. Las respuestas de score y cartera **no** incluyen `cuil`.
+`GET /clients/{client_id}/score`, `GET /config` y `GET /metrics` conservan rutas, campos de
+entrada, campos de salida existentes y códigos. La única novedad es el campo `cuil` en las
+respuestas de la cartera almacenada (FR-034), con esquemas nuevos que extienden los anteriores:
+`StoredPortfolioResult` y `StoredClientScoreResult`. `ClientScoreResult` y `PortfolioResult`
+no cambian. Además, los endpoints que leen la base declaran 503 si no está disponible.
+
+| Endpoint | `cuil` en cada resultado |
+|----------|--------------------------|
+| `GET /portfolio` | CUIL del cliente persistido (11 dígitos) |
+| `GET /clients/{client_id}/score` | CUIL del cliente persistido (11 dígitos) |
+| `POST /portfolio/score` | ausente: la respuesta no cambia (cartera enviada en la solicitud; la entrada **no** acepta `cuil`) |
+| `POST /score` | no aplica: devuelve `ScoreResult`, sin cambios |
+
+Ejemplo de un resultado de `GET /portfolio` (campos previos sin cambios):
+
+```json
+{
+  "client_id": "C-001",
+  "cuil": "20900000015",
+  "name": "Acme Ficticia",
+  "metrics": {"usage": 90, "support_tickets": 0, "nps": 9, "days_to_renewal": 300},
+  "result": {"score": 95, "level": "Top", "sub_scores": {"usage": 90.0, "support_tickets": 100.0, "nps": 90.0, "renewal": 100.0}},
+  "errors": null
+}
+```
 
 Formato de errores, igual que las specs anteriores:
 - 422: `{"detail": [{"loc": [...], "msg": "<español>", "type": "..."}]}`
@@ -10,21 +33,29 @@ Formato de errores, igual que las specs anteriores:
 
 ## Esquemas
 
-`ClientCreate` (`POST /clients`)
+`ClientData` (cuerpo de `POST /clients` y `PUT /clients/{client_id}`)
 
 ```json
 {
-  "client_id": "C-021",
   "cuil": "20900000244",
   "name": "Cliente Ficticio",
   "metrics": {"usage": 60, "support_tickets": 3, "nps": 7, "days_to_renewal": 90}
 }
 ```
 
-`ClientUpdate` (`PUT /clients/{client_id}`): igual, sin `client_id` (si se envía → 422
-"campo no permitido").
+El cuerpo **no** lleva `client_id`: si se envía → 422 "campo no permitido".
 
-`ClientRecord` (respuesta): los mismos campos que `ClientCreate`; `cuil` siempre sin guiones.
+`ClientRecord` (respuesta): `client_id` + los campos de `ClientData`; `cuil` siempre sin
+guiones. En un alta, `client_id` es el UUID v4 generado por el servicio:
+
+```json
+{
+  "client_id": "3f2b8c1e-9a4d-4e7b-8c21-5d6f0a9b1c2d",
+  "cuil": "20900000244",
+  "name": "Cliente Ficticio",
+  "metrics": {"usage": 60, "support_tickets": 3, "nps": 7, "days_to_renewal": 90}
+}
+```
 
 `cuil` en la entrada: texto de 11 dígitos, o `XX-XXXXXXXX-X`; se normaliza a 11 dígitos.
 
@@ -32,7 +63,7 @@ Formato de errores, igual que las specs anteriores:
 
 | Método y ruta | Éxito | Errores |
 |---------------|-------|---------|
-| `POST /clients` | 201 `ClientRecord` | 409 id o CUIL ya existe; 422 |
+| `POST /clients` | 201 `ClientRecord` + `Location: /clients/{client_id}` | 409 CUIL ya existe (o id generado ya existente); 422 |
 | `GET /clients` | 200 `list[ClientRecord]` (orden de alta) | — |
 | `GET /clients/{client_id}` | 200 `ClientRecord` | 404 |
 | `PUT /clients/{client_id}` | 200 `ClientRecord` | 404; 409 CUIL de otro cliente; 422 |
@@ -43,11 +74,11 @@ Formato de errores, igual que las specs anteriores:
 | Caso | Código | `detail` / `msg` |
 |------|--------|------------------|
 | Cliente inexistente | 404 | `Cliente 'C-999' no encontrado` |
-| `client_id` duplicado | 409 | `Ya existe un cliente con el identificador 'C-001'` |
+| `client_id` generado ya existente | 409 | `Ya existe un cliente con el identificador '<uuid>'` |
 | CUIL duplicado | 409 | `El CUIL '20900000015' ya está registrado en otro cliente` |
 | CUIL con formato incorrecto (loc `["body","cuil"]`) | 422 | `el CUIL debe tener 11 dígitos, con o sin guiones (XX-XXXXXXXX-X)` |
 | Dígito verificador inválido | 422 | `el dígito verificador del CUIL no es válido` |
-| CUIL faltante / campo extra | 422 | `campo obligatorio` / `campo no permitido` |
+| CUIL faltante / campo extra (incluido `client_id`) | 422 | `campo obligatorio` / `campo no permitido` |
 | Métrica fuera de rango | 422 | el mensaje de rango existente (`range_message`) |
 
 Todos los errores de validación se informan juntos (FR-017). 422 tiene prioridad sobre 409.

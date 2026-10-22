@@ -8,6 +8,12 @@
 
 **Input**: User description: "Persistencia y CRUD de clientes mediante una API con base de datos. Hoy la cartera se lee directamente desde data/clients.json (solo lectura). Se quiere reemplazar esa lectura directa por una API con persistencia, manteniendo sin cambios la lógica de scoring y el frontend actual. Alcance: CRUD de clientes, carga inicial idempotente de los 20 clientes ficticios actuales, endpoints de cartera y score que leen de los datos persistidos, y pruebas automatizadas."
 
+## Clarifications
+
+### Session 2026-10-19
+
+- Q: ¿Quién define el identificador (`client_id`) al crear un cliente? → A: Lo genera el servicio con la biblioteca nativa `uuid` (UUID versión 4, texto canónico en minúsculas) antes de persistirlo. El alta no recibe `client_id`; los 20 clientes de la carga inicial conservan sus identificadores actuales (`C-001` … `C-020`).
+
 **Depende de**: [001-customer-health-scoring](../001-customer-health-scoring/spec.md) (motor de scoring y su interfaz de servicio) y [002-health-score-dashboard](../002-health-score-dashboard/spec.md) (interfaz que consume la cartera).
 
 ## User Scenarios & Testing *(mandatory)*
@@ -32,7 +38,7 @@ Una persona de Customer Success abre el dashboard y ve la misma cartera de 20 cl
 
 ### User Story 2 - Crear y consultar clientes (Priority: P1)
 
-Una persona de Customer Success da de alta un cliente nuevo indicando su CUIL (CUIT/CUIL), su nombre y las cuatro métricas. El CUIL permite distinguir de forma unívoca a cada cliente: no puede haber dos clientes con el mismo CUIL. El identificador debe ser generado por la aplicacion automaticamente en el momento que se crea el recurso. Puede listar todos los clientes y consultar uno por su identificador; en ambos casos se devuelve también su CUIL. El cliente creado aparece de inmediato en la cartera con su score y nivel calculados.
+Una persona de Customer Success da de alta un cliente nuevo indicando su CUIL (CUIT/CUIL), su nombre y las cuatro métricas. El CUIL permite distinguir de forma unívoca a cada cliente: no puede haber dos clientes con el mismo CUIL. El identificador lo genera la aplicación automáticamente (UUID) en el momento en que se crea el recurso, antes de guardarlo. Puede listar todos los clientes y consultar uno por su identificador; en ambos casos se devuelve también su CUIL. El cliente creado aparece de inmediato en la cartera con su score y nivel calculados.
 
 **Why this priority**: es el primer paso de gestión real de datos y lo que hace útil la persistencia; habilita además el botón "Guardar en cartera" que la spec 002 dejó como "próximamente".
 
@@ -40,12 +46,14 @@ Una persona de Customer Success da de alta un cliente nuevo indicando su CUIL (C
 
 **Acceptance Scenarios**:
 
-1. **Given** un identificador que no existe, un CUIL válido no registrado y métricas válidas, **When** se crea el cliente, **Then** el servicio confirma la creación y devuelve el cliente con los datos guardados, incluido su CUIL e identificador.
+1. **Given** un CUIL válido no registrado y métricas válidas, **When** se crea el cliente, **Then** el servicio confirma la creación y devuelve el cliente con los datos guardados, incluido su CUIL y el identificador UUID que generó.
 2. **Given** un cliente creado, **When** se consulta la cartera, **Then** el cliente aparece con el mismo score y nivel que daría evaluar sus métricas con el motor de scoring.
 3. **Given** clientes existentes, **When** se pide el listado, **Then** se devuelven todos los clientes con su identificador, CUIL, nombre y métricas.
 4. **Given** un identificador existente, **When** se consulta ese cliente, **Then** se devuelven su identificador, CUIL, nombre y métricas.
 5. **Given** un identificador que no existe, **When** se consulta ese cliente, **Then** el servicio responde que no se encontró, con un mensaje en español que incluye el identificador.
-6. **Given** cuando la aplicacion genera un identificador que ya existe, **When** se intenta crear otro cliente con ese identificador, **Then** el servicio rechaza la operación indicando el conflicto (409) y no modifica el cliente existente.
+6. **Given** que el identificador generado coincidiera con uno existente (caso prácticamente imposible con UUID, pero garantizado por el almacenamiento), **When** se intenta guardar, **Then** el servicio rechaza la operación indicando el conflicto (409) y no modifica el cliente existente.
+9. **Given** una solicitud de alta que trae un `client_id`, **When** se envía, **Then** se rechaza con un error de validación (422, campo no permitido): el identificador no lo elige quien crea el cliente.
+10. **Given** dos altas sucesivas con datos válidos, **When** se crean, **Then** cada cliente recibe un identificador UUID distinto.
 7. **Given** un CUIL ya registrado en otro cliente, **When** se intenta crear un cliente con ese CUIL, **Then** el servicio rechaza la operación indicando el conflicto (409), con un mensaje en español que aclara que el CUIL ya está registrado, y no guarda nada.
 8. **Given** una solicitud de alta sin CUIL, **When** se envía, **Then** se rechaza con un error de validación (422) que indica el campo.
 
@@ -57,14 +65,14 @@ Cuando se crea o modifica un cliente, el servicio rechaza cualquier dato que inc
 
 **Why this priority**: las reglas de las métricas son la base de la confianza en el scoring; guardar datos fuera de rango contaminaría la cartera de forma persistente.
 
-**Independent Test**: se envían clientes con cada tipo de dato inválido (fuera de rango, decimal, texto, faltante, campo extra, identificador vacío) y se verifica que todos se rechazan con un mensaje por campo y que la cartera queda intacta.
+**Independent Test**: se envían clientes con cada tipo de dato inválido (fuera de rango, decimal, texto, faltante, campo extra, `client_id` en el cuerpo) y se verifica que todos se rechazan con un mensaje por campo y que la cartera queda intacta.
 
 **Acceptance Scenarios**:
 
 1. **Given** una solicitud con uso 101 o −1, NPS 11 o −1, tickets −1 o días −1, **When** se envía, **Then** se rechaza con un error que indica el campo y su rango válido, y no se guarda nada.
 2. **Given** una solicitud con los valores límite válidos (uso 0 y 100, NPS 0 y 10, tickets 0, días 0), **When** se envía, **Then** se acepta.
 3. **Given** una solicitud con un valor decimal, de texto, booleano o nulo en una métrica, **When** se envía, **Then** se rechaza indicando el campo.
-4. **Given** una solicitud a la que le falta una métrica, o que trae un campo no permitido, o con identificador vacío, **When** se envía, **Then** se rechaza indicando el campo.
+4. **Given** una solicitud a la que le falta una métrica, o que trae un campo no permitido (incluido `client_id`, que lo genera el servicio), **When** se envía, **Then** se rechaza indicando el campo.
 5. **Given** una solicitud con varios campos inválidos, **When** se envía, **Then** el error informa todos los campos inválidos, no solo el primero.
 6. **Given** una solicitud con un CUIL de formato válido y dígito verificador correcto (por ejemplo `20900000015`), **When** se envía, **Then** se acepta y se guarda como texto de 11 dígitos sin guiones.
 7. **Given** una solicitud con un CUIL con guiones en las posiciones canónicas (por ejemplo `20-90000001-5`) y dígito verificador correcto, **When** se envía, **Then** se acepta y se guarda normalizado a 11 dígitos sin guiones.
@@ -106,7 +114,7 @@ Una persona de Customer Success elimina un cliente que ya no corresponde a la ca
 
 1. **Given** un cliente existente, **When** se elimina, **Then** el servicio confirma la eliminación y el cliente deja de aparecer en el listado, la cartera y su consulta de score.
 2. **Given** un identificador inexistente, **When** se intenta eliminar, **Then** el servicio responde que no se encontró.
-3. **Given** un cliente eliminado, **When** se crea otro con el mismo identificador o con el mismo CUIL, **Then** se acepta como un cliente nuevo (el CUIL queda libre).
+3. **Given** un cliente eliminado, **When** se crea otro con el mismo CUIL, **Then** se acepta como un cliente nuevo con un identificador nuevo (el CUIL queda libre; el identificador eliminado no se reutiliza).
 4. **Given** una cartera tras eliminar un cliente, **When** se consulta el resumen, **Then** el total y los conteos por nivel se actualizan y la suma de los conteos sigue siendo igual al total.
 
 ---
@@ -137,7 +145,7 @@ Una persona de Customer Success ve el CUIL de cada cliente en el dashboard, con 
 - ¿Qué pasa si el archivo de datos inicial no existe o es inválido al iniciar con almacenamiento vacío? El servicio informa el problema de forma explícita y no arranca con datos parciales.
 - ¿Qué pasa si el archivo de datos inicial contiene un identificador que ya existe en el almacenamiento? La carga inicial lo omite sin modificar el cliente existente.
 - ¿Qué pasa si el archivo de datos inicial contiene registros inválidos? Se rechazan según las mismas reglas de validación y se informa cuáles fueron omitidos; no se guardan datos inválidos.
-- ¿Qué pasa con dos solicitudes simultáneas que crean el mismo identificador? Solo una tiene éxito y la otra recibe el error de conflicto; nunca quedan dos clientes con el mismo identificador.
+- ¿Qué pasa con dos solicitudes simultáneas de alta? Cada una recibe su propio UUID; si por azar coincidieran, la restricción de unicidad del almacenamiento hace que solo una tenga éxito y la otra reciba el conflicto (409). Nunca quedan dos clientes con el mismo identificador.
 - ¿Qué pasa si el CUIL trae espacios al inicio o al final, o guiones en posiciones no canónicas (p. ej. `2-09000001-55`)? Se rechaza (422); no se recortan espacios. Solo se admiten 11 dígitos, o 11 dígitos con guiones exactamente en las posiciones 2 y 10 (`XX-XXXXXXXX-X`).
 - ¿Qué pasa con un CUIL que empieza con cero? Se trata como texto: se conservan los ceros y se valida igual que cualquier otro; por eso nunca se almacena ni se transmite como número.
 - ¿Qué pasa si el resto del cálculo del dígito verificador es 1 (combinación para la que no existe dígito válido)? Ningún CUIL con ese cuerpo es válido; cualquier valor se rechaza con el mismo error de dígito verificador inválido.
@@ -166,19 +174,19 @@ Una persona de Customer Success ve el CUIL de cada cliente en el dashboard, con 
 
 **CRUD de clientes**
 
-- **FR-007**: Los usuarios MUST poder crear un cliente indicando identificador, CUIL (obligatorio), nombre opcional y las cuatro métricas.
+- **FR-007**: Los usuarios MUST poder crear un cliente indicando CUIL (obligatorio), nombre opcional y las cuatro métricas. El servicio MUST generar el identificador con la biblioteca nativa `uuid` (UUID v4, texto canónico de 36 caracteres en minúsculas) antes de persistirlo y devolverlo en la respuesta; una solicitud que trae `client_id` se rechaza (422).
 - **FR-008**: Los usuarios MUST poder listar todos los clientes con su identificador, CUIL, nombre y métricas.
 - **FR-009**: Los usuarios MUST poder consultar un cliente por su identificador; la respuesta incluye su CUIL.
 - **FR-010**: Los usuarios MUST poder actualizar el CUIL, el nombre y las métricas de un cliente existente; el identificador MUST NOT cambiar. El CUIL nuevo se valida y se verifica su unicidad con las mismas reglas que en el alta.
 - **FR-011**: Los usuarios MUST poder eliminar un cliente existente.
-- **FR-012**: El identificador de cliente MUST ser único, no vacío y comparado de forma exacta.
+- **FR-012**: El identificador de cliente MUST ser único (garantizado por el almacenamiento), no vacío, inmutable y comparado de forma exacta. Los clientes de la carga inicial conservan sus identificadores del archivo de datos (`C-001` … `C-020`); los creados después tienen un UUID.
 - **FR-013**: Cada operación de escritura MUST ser atómica: si falla, el almacenamiento queda como estaba antes de la solicitud.
 
 **Validación y errores**
 
 - **FR-014**: Toda entrada externa MUST validarse en el límite del servicio con las reglas de negocio de la constitución: uso 0–100, tickets ≥ 0, NPS 0–10, días hasta la renovación ≥ 0, todos enteros, ambos extremos inclusivos.
 - **FR-015**: Los rangos de las métricas MUST seguir definidos en un único lugar del sistema; las nuevas operaciones MUST reutilizarlos y no redefinirlos.
-- **FR-016**: Se MUST rechazar valores fuera de rango, decimales, no numéricos, booleanos, nulos, métricas faltantes, campos no permitidos e identificadores vacíos, sin guardar nada.
+- **FR-016**: Se MUST rechazar valores fuera de rango, decimales, no numéricos, booleanos, nulos, métricas faltantes y campos no permitidos (incluido un `client_id` en el cuerpo de alta o edición), sin guardar nada.
 - **FR-017**: Los errores de validación MUST usar el mismo formato que el resto de la API, con mensajes en español, indicando el campo y la regla incumplida, e informando todos los campos inválidos de la solicitud.
 - **FR-018**: El servicio MUST distinguir y documentar tres condiciones de error: datos inválidos (validación, 422), cliente inexistente (no encontrado, 404) e identificador o CUIL ya existente (conflicto, 409), cada una con mensaje en español.
 
@@ -218,7 +226,7 @@ Una persona de Customer Success ve el CUIL de cada cliente en el dashboard, con 
 ### Key Entities *(include if feature involves data)*
 
 - **Presentación del CUIL**: forma de mostrar el CUIL con guiones (`XX-XXXXXXXX-X`) en el dashboard; se deriva de los 11 dígitos recibidos y no se almacena ni se envía a la API.
-- **Cliente**: empresa de la cartera. Tiene un identificador único e inmutable, un CUIL único (texto de 11 dígitos, editable, ficticio), un nombre ficticio opcional y las cuatro métricas (uso, tickets de soporte, NPS, días hasta la renovación). Es el único dato que se persiste; los resultados de scoring se calculan al consultar y no se almacenan.
+- **Cliente**: empresa de la cartera. Tiene un identificador único e inmutable (UUID generado por el servicio, o el identificador original en los clientes de la carga inicial), un CUIL único (texto de 11 dígitos, editable, ficticio), un nombre ficticio opcional y las cuatro métricas (uso, tickets de soporte, NPS, días hasta la renovación). Es el único dato que se persiste; los resultados de scoring se calculan al consultar y no se almacenan.
 - **Cartera**: conjunto de todos los clientes persistidos. Su evaluación (resultados por cliente y resumen por nivel) se calcula con el motor de scoring en cada consulta.
 - **Carga inicial**: operación que incorpora a la cartera los clientes ficticios del archivo de datos actual. No es un cliente; es un proceso que debe ser repetible sin efectos secundarios.
 - **Error de operación**: respuesta con el motivo del rechazo, de tres tipos: validación (campos y reglas, incluidos formato y dígito verificador del CUIL), no encontrado e identificador o CUIL en conflicto.
@@ -237,7 +245,8 @@ Una persona de Customer Success ve el CUIL de cada cliente en el dashboard, con 
 - **SC-008**: Con una cartera de 1000 clientes, la consulta de la cartera completa responde en menos de 2 segundos.
 - **SC-009**: La suite de pruebas automatizadas pasa completa, incluidas las pruebas de las specs 001 y 002, sin modificar sus expectativas de contrato.
 - **SC-010**: El 100 % de los 20 clientes cargados inicialmente tiene un CUIL distinto, de 11 dígitos y con dígito verificador válido, y ejecutar la carga inicial varias veces conserva siempre los mismos valores.
-- **SC-011**: El 100 % de los CUIL inválidos probados (longitud distinta de 11, caracteres no numéricos, guiones mal ubicados, dígito verificador alterado en cada posible valor distinto del correcto, nulo, vacío) se rechaza con 422, y el 100 % de los duplicados (alta y actualización, con y sin guiones) se rechaza con 409, sin modificar la cartera.- **SC-012**: El 100 % de los 20 clientes de la cartera muestra su CUIL con guiones en la tabla, en las tarjetas por categoría y en el detalle; buscar por cualquier CUIL (con o sin guiones) devuelve exactamente a ese cliente; y las pruebas del frontend (existentes y nuevas) pasan completas.
+- **SC-011**: El 100 % de los CUIL inválidos probados (longitud distinta de 11, caracteres no numéricos, guiones mal ubicados, dígito verificador alterado en cada posible valor distinto del correcto, nulo, vacío) se rechaza con 422, y el 100 % de los duplicados (alta y actualización, con y sin guiones) se rechaza con 409, sin modificar la cartera.
+- **SC-012**: El 100 % de los 20 clientes de la cartera muestra su CUIL con guiones en la tabla, en las tarjetas por categoría y en el detalle; buscar por cualquier CUIL (con o sin guiones) devuelve exactamente a ese cliente; y las pruebas del frontend (existentes y nuevas) pasan completas.
 
 ## Assumptions
 
@@ -251,7 +260,7 @@ Una persona de Customer Success ve el CUIL de cada cliente en el dashboard, con 
 - La actualización de un cliente reemplaza su CUIL, nombre y métricas completos; el identificador es inmutable. Si en el plan se decide admitir actualización parcial, no cambia las reglas de validación.
 - Como el CRUD solo guarda datos válidos, la cartera persistida normalmente no contendrá registros inválidos; el contrato de la cartera sigue admitiendo el campo de errores por compatibilidad con las specs 001 y 002.
 - La eliminación es definitiva (no hay papelera ni historial); el seguimiento histórico sigue fuera de alcance, como en la spec 001.
-- El nombre del cliente es opcional, de texto libre y ficticio; el identificador es un texto no vacío definido por quien crea el cliente.
+- El nombre del cliente es opcional, de texto libre y ficticio. El identificador lo genera el servicio (UUID v4); no se usa un correlativo `C-NNN` para no depender de un contador compartido.
 - Los resultados de scoring no se persisten: se calculan al consultar con la configuración activa en ese momento.
 - Cambiar el frontend para ofrecer crear, editar o eliminar clientes (incluido ingresar o editar el CUIL en un formulario y habilitar "Guardar en cartera") queda fuera de alcance de esta feature; es una mejora posterior que consumirá esta API. En esta feature el frontend solo muestra el CUIL y permite buscar por él.
 - Migraciones de esquema avanzadas, múltiples bases de datos, paginación, ordenamiento y filtros del listado quedan fuera de alcance de esta versión.

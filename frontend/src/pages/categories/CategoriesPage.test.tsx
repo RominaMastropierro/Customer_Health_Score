@@ -50,3 +50,18 @@ describe("Por categoría (US4)", () => {
     expect(toggle).toHaveAttribute("aria-expanded", "false")
   })
 })
+
+describe("CUIL en las tarjetas (US6, spec 003)", () => {
+  it("muestra el CUIL con guiones junto al identificador", () => {
+    renderPage()
+    const acme = screen.getByText("Acme Ficticia").closest("article")!
+    expect(acme).toHaveTextContent("C-001")
+    expect(acme).toHaveTextContent("20-90000001-5")
+  })
+
+  it("muestra un marcador si el cliente no tiene CUIL", () => {
+    renderPage()
+    const invalid = within(screen.getByRole("region", { name: "Inválido" })).getByRole("article")
+    expect(invalid).toHaveTextContent("—")
+  })
+})
