@@ -79,7 +79,7 @@ Confirmación tras eliminar: `Cliente eliminado: <nombre>`.
 
 | Caso | Dónde | Texto |
 |------|-------|-------|
-| CUIT/CUIL vacío al guardar | campo CUIT/CUIL | `Falta el CUIT/CUIL` (no llama al servicio) |
+| CUIT/CUIL vacío al guardar | alta: texto secundario del botón deshabilitado; edición: campo CUIT/CUIL | `Falta el CUIT/CUIL` (no llama al servicio) |
 | Métrica vacía o no numérica | campo | `Introduce un número entero` (existente) |
 | 422 de un campo | campo | `msg` del servicio, sin cambios |
 | 409 CUIL duplicado | campo CUIT/CUIL | `detail` del servicio |

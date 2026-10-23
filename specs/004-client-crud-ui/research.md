@@ -126,7 +126,7 @@ Sin `NEEDS CLARIFICATION` pendientes. Cada decisión indica qué requisito resue
   sin guardar (FR-009). Radix maneja foco inicial, trampa de foco, Escape y retorno del foco
   (FR-027). El botón de confirmar eliminación usa la variante `destructive` de `Button`.
 - Cancelar el diálogo de eliminación con clic fuera: `AlertDialog` de Radix no se cierra al
-  hacer clic fuera por diseño; se agrega `onEscapeKeyDown`/`onPointerDownOutside` → cancelar,
+  hacer clic fuera por diseño, e ignora `onPointerDownOutside`; se agrega a `AlertDialogContent` la prop opcional `onOverlayClick` → cancelar,
   para cumplir el escenario 2 de US4 (cancelar con botón, Escape o clic fuera).
 - **Rationale**: constitución, *Frontend*: componentes de shadcn/ui antes que propios; sin
   dependencias nuevas.

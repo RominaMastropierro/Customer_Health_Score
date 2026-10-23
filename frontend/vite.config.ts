@@ -22,5 +22,8 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: "./src/test/setup.ts",
+    // Las pruebas que simulan teclado y clics en jsdom superan los 5 s por defecto cuando
+    // corren muchos archivos en paralelo.
+    testTimeout: 15000,
   },
 })

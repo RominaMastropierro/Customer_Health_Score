@@ -99,6 +99,10 @@ export function initials(text: string): string {
   return text.slice(0, 2).toUpperCase()
 }
 
+// Único rótulo visible de la identificación fiscal (spec 004, FR-028). Los clientes son
+// empresas y tienen CUIT; el dato sigue llamándose `cuil` porque así lo define la API.
+export const CUIL_LABEL = "CUIT/CUIL"
+
 // CUIL (spec 003): solo presentación. El valor recibido no se altera ni se envía a la API.
 export function formatCuil(value: string | null | undefined): string {
   if (value === null || value === undefined) return "—"

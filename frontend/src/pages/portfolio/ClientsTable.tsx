@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/table"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import {
+  CUIL_LABEL,
   DISPLAY_GROUPS,
   METRIC_VIEWS,
   displayName,
@@ -90,7 +91,7 @@ export default function ClientsTable({
               value={state.query}
               onChange={(e) => onStateChange({ ...state, query: e.target.value })}
               placeholder="Buscar cliente"
-              title="Buscar por nombre, ID o CUIL"
+              title={`Buscar por nombre, ID o ${CUIL_LABEL}`}
               className="pl-9 sm:w-56"
             />
           </label>
@@ -132,7 +133,7 @@ export default function ClientsTable({
           <TableHeader>
             <TableRow className="hover:bg-transparent">
               <TableHead className="pl-5">Cliente</TableHead>
-              <TableHead>CUIL</TableHead>
+              <TableHead>{CUIL_LABEL}</TableHead>
               <TableHead>Score</TableHead>
               <TableHead>Estado</TableHead>
               {METRIC_VIEWS.map((view) => (

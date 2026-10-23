@@ -1,3 +1,4 @@
+import type { ReactNode } from "react"
 import { AlertTriangle, Users } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -24,6 +25,7 @@ export default function StatePanel({
   description,
   bare = false,
   className,
+  action,
 }: {
   type: "loading" | "error" | "empty"
   retry?: () => void
@@ -31,6 +33,7 @@ export default function StatePanel({
   description?: string
   bare?: boolean
   className?: string
+  action?: ReactNode
 }) {
   const text = DEFAULTS[type]
   const body = (
@@ -58,6 +61,7 @@ export default function StatePanel({
       )}
       <strong className="text-base">{title ?? text.title}</strong>
       <span className="text-muted-foreground max-w-sm text-sm">{description ?? text.description}</span>
+      {action && <div className="mt-3">{action}</div>}
       {retry && (
         <Button variant="secondary" className="mt-3" onClick={retry}>
           Reintentar

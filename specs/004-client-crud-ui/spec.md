@@ -51,9 +51,9 @@ Cuando el servicio rechaza un alta o una edición, la persona ve junto a cada ca
 
 **Acceptance Scenarios**:
 
-1. **Given** un CUIL con dígito verificador inválido (p. ej. `20900000016`), **When** se guarda, **Then** se muestra junto al campo CUIL el mensaje del servicio que indica que el dígito verificador no es válido, y no se crea nada.
-2. **Given** un CUIL con formato incorrecto (p. ej. 10 dígitos, letras o guiones mal ubicados), **When** se guarda, **Then** se muestra junto al campo CUIL un mensaje que indica el formato esperado (`XX-XXXXXXXX-X` o 11 dígitos).
-3. **Given** un CUIL ya registrado en otro cliente, con o sin guiones, **When** se guarda, **Then** se muestra junto al campo CUIL que ese CUIL ya está registrado en otro cliente, y no se crea ni se modifica nada.
+1. **Given** un CUIL con dígito verificador inválido (p. ej. `20900000016`), **When** se guarda, **Then** se muestra junto al campo CUIT/CUIL el mensaje del servicio que indica que el dígito verificador no es válido, y no se crea nada.
+2. **Given** un CUIL con formato incorrecto (p. ej. 10 dígitos, letras o guiones mal ubicados), **When** se guarda, **Then** se muestra junto al campo CUIT/CUIL un mensaje que indica el formato esperado (`XX-XXXXXXXX-X` o 11 dígitos).
+3. **Given** un CUIL ya registrado en otro cliente, con o sin guiones, **When** se guarda, **Then** se muestra junto al campo CUIT/CUIL que ese CUIL ya está registrado en otro cliente, y no se crea ni se modifica nada.
 4. **Given** una métrica fuera de rango que llegara al servicio, **When** se guarda, **Then** se muestra el mensaje de rango junto a esa métrica, con el mismo texto que ya usa el dashboard.
 5. **Given** varios campos inválidos a la vez (p. ej. CUIL y una métrica), **When** se guarda, **Then** se marcan todos los campos con error, no solo el primero.
 6. **Given** el servicio no disponible o un error inesperado, **When** se guarda, **Then** se muestra un aviso general en español que invita a reintentar, los datos escritos se conservan y no se muestra ninguna confirmación.
@@ -76,7 +76,7 @@ Una persona de Customer Success abre el detalle de un cliente, pulsa "Editar", v
 2. **Given** el formulario de edición con valores válidos, **When** se guarda, **Then** se muestra una confirmación, el detalle vuelve a modo lectura con los nuevos datos y el score y nivel recalculados por el servicio.
 3. **Given** una edición exitosa que cambia el nivel del cliente, **When** se mira la cartera y la vista por categorías, **Then** el cliente aparece en su nuevo nivel y los conteos por nivel se actualizan, sin recargar la página.
 4. **Given** el formulario de edición, **When** se guarda sin cambiar el CUIL, **Then** se acepta (su propio CUIL no es un conflicto).
-5. **Given** el formulario de edición, **When** se cambia el CUIL por el de otro cliente o por uno inválido, **Then** se muestra el error junto al campo CUIL (US2) y el cliente conserva sus datos anteriores.
+5. **Given** el formulario de edición, **When** se cambia el CUIL por el de otro cliente o por uno inválido, **Then** se muestra el error junto al campo CUIT/CUIL (US2) y el cliente conserva sus datos anteriores.
 6. **Given** el formulario de edición con cambios sin guardar, **When** se pulsa "Cancelar", **Then** se descartan los cambios y el detalle vuelve a mostrar los datos guardados.
 7. **Given** el formulario de edición con cambios sin guardar, **When** se intenta cerrar el detalle o navegar a otra pantalla, **Then** se pide confirmación antes de descartar los cambios.
 8. **Given** el formulario de edición sin cambios, **When** se mira el botón de guardar, **Then** está deshabilitado (no hay nada que guardar).
@@ -126,7 +126,7 @@ Desde la cartera, la persona encuentra una acción visible "Nuevo cliente" que l
 - ¿Qué pasa si el CUIL se escribe con espacios al inicio o al final? Se envía tal como se escribió y el servicio lo rechaza por formato (spec 003); el mensaje se muestra junto al campo. El dashboard no recorta ni reescribe el CUIL en silencio.
 - ¿Qué pasa si el CUIL empieza con cero? Se trata siempre como texto: se conservan los ceros iniciales al escribir, al enviar y al mostrar.
 - ¿Qué pasa si el mismo CUIL se escribe en otro formato que el de un cliente existente (`20900000015` vs `20-90000001-5`)? El servicio lo detecta como duplicado y se muestra el error de CUIL ya registrado.
-- ¿Qué pasa si se pulsa "Guardar en cartera" sin CUIL? El dashboard lo indica junto al campo CUIL sin llamar al servicio.
+- ¿Qué pasa si se intenta guardar sin CUIT/CUIL? En el alta, "Guardar en cartera" queda deshabilitado con el motivo "Falta el CUIT/CUIL" (FR-003); en la edición, al pulsar "Guardar cambios" se muestra "Falta el CUIT/CUIL" junto al campo. En ningún caso se llama al servicio.
 - ¿Qué pasa si una métrica no es un número entero al guardar? Se aplica el mismo bloqueo que hoy tiene "Calcular" (solo se bloquea lo que no es un número); el resto de las reglas las valida el servicio.
 - ¿Qué pasa si el servicio tarda en responder? El botón muestra que la operación está en curso y queda deshabilitado; no se duplican solicitudes. Si la persona sale de la pantalla, la respuesta tardía no muestra mensajes en otra pantalla, y la cartera se actualiza igual si la operación se completó.
 - ¿Qué pasa si se abre el detalle de un cliente recién eliminado desde un enlace guardado o desde el historial del navegador? Se muestra el estado existente "Cliente no encontrado".
@@ -144,8 +144,8 @@ Desde la cartera, la persona encuentra una acción visible "Nuevo cliente" que l
 **Alta (Nuevo cliente)**
 
 - **FR-001**: La pantalla "Nuevo cliente" MUST incluir, como primer campo del formulario y antes del nombre, un input de texto rotulado "CUIT/CUIL" donde se escribe el CUIT del cliente, con el ejemplo de formato `XX-XXXXXXXX-X` y una ayuda que indica que se acepta con o sin guiones. El campo MUST tratar el valor como texto: no lo reformatea mientras se escribe, no recorta espacios, conserva ceros iniciales y no usa controles numéricos (flechas ni conversión a número). Además del CUIT/CUIL, el formulario conserva el nombre opcional y las cuatro métricas existentes. El valor se guarda en el dato `cuil` del cliente (spec 003), que admite CUIT y CUIL porque comparten formato y dígito verificador.
-- **FR-002**: Calcular el score MUST seguir funcionando sin CUIL y con el mismo comportamiento de la spec 002; el CUIL solo es necesario para guardar.
-- **FR-003**: El botón "Guardar en cartera" MUST habilitarse cuando hay un resultado calculado, el CUIL no está vacío y el formulario no cambió desde el último cálculo; en cualquier otro caso MUST estar deshabilitado e indicar el motivo (falta el CUIL, o hay que volver a calcular). El texto "Disponible próximamente" MUST eliminarse.
+- **FR-002**: Calcular el score MUST seguir funcionando sin CUIT/CUIL y con el mismo comportamiento de la spec 002; el CUIT/CUIL solo es necesario para guardar.
+- **FR-003**: El botón "Guardar en cartera" MUST habilitarse cuando hay un resultado calculado, el CUIT/CUIL no está vacío y el formulario no cambió desde el último cálculo; en cualquier otro caso MUST estar deshabilitado e indicar el motivo (falta el CUIL, o hay que volver a calcular). El texto "Disponible próximamente" MUST eliminarse.
 - **FR-004**: Al guardar, el dashboard MUST enviar al servicio el CUIL tal como se escribió, el nombre (vacío o solo espacios se envía como ausente) y las cuatro métricas, y MUST NOT enviar un identificador: lo genera el servicio.
 - **FR-005**: Tras un alta exitosa, el dashboard MUST mostrar una confirmación en español con el nombre (o el nombre de reemplazo) y el CUIT/CUIL con guiones, ofrecer una acción para abrir el detalle del cliente creado en la cartera, y dejar el formulario vacío.
 
@@ -164,7 +164,7 @@ Desde la cartera, la persona encuentra una acción visible "Nuevo cliente" que l
 **Errores**
 
 - **FR-012**: Los errores de validación que devuelve el servicio (CUIL con formato incorrecto, dígito verificador inválido, CUIL faltante, métricas fuera de rango o con tipo inválido) MUST mostrarse junto al campo correspondiente, con el mensaje en español del servicio, marcando todos los campos con error a la vez.
-- **FR-013**: Un CUIL ya registrado en otro cliente (conflicto) MUST mostrarse como error del campo CUIL con el mensaje del servicio.
+- **FR-013**: Un CUIL ya registrado en otro cliente (conflicto) MUST mostrarse como error del campo CUIT/CUIL con el mensaje del servicio.
 - **FR-014**: Si el cliente no existe al editar o eliminar, el dashboard MUST informarlo en español, MUST NOT crear un cliente, MUST ofrecer volver a la cartera y MUST actualizar la cartera.
 - **FR-015**: Un error de conexión, de servicio no disponible o inesperado MUST mostrarse como aviso general en español con la opción de reintentar; los datos escritos MUST conservarse.
 - **FR-016**: Los errores que el formulario no puede asociar a un campo visible MUST mostrarse como aviso general del formulario.

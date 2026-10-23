@@ -131,6 +131,15 @@ Dashboard web (Cartera, Por categoría, Nuevo cliente, detalle y configuración)
 [frontend/](frontend/). Todos los datos salen de la API; la interfaz no calcula scores.
 Requiere Node.js 20 o superior y la API corriendo.
 
+Gestión de clientes desde el dashboard (spec 004):
+
+- **Alta**: en "Nuevo cliente", escribir el CUIT/CUIL (con o sin guiones), el nombre opcional y
+  las métricas, calcular el score y pulsar "Guardar en cartera".
+- **Edición y baja**: desde el detalle del cliente, con "Editar" o "Eliminar" (la baja pide
+  confirmación y es definitiva).
+- Los errores del servicio (CUIT/CUIL inválido o ya registrado, métricas fuera de rango) se
+  muestran junto a cada campo, y la cartera se actualiza sola después de cada operación.
+
 ```powershell
 cd frontend
 npm install
@@ -143,8 +152,10 @@ El servidor de desarrollo reenvía `/api` a `http://127.0.0.1:8000`. Para usar o
 definir `VITE_API_TARGET` antes de `npm run dev`. [frontend/.npmrc](frontend/.npmrc) sube los
 reintentos y plazos de npm porque la red de desarrollo es lenta.
 
-La guía de validación de punta a punta está en
-[specs/002-health-score-dashboard/quickstart.md](specs/002-health-score-dashboard/quickstart.md).
+Las guías de validación de punta a punta están en
+[specs/002-health-score-dashboard/quickstart.md](specs/002-health-score-dashboard/quickstart.md)
+y, para el alta, la edición y la baja de clientes,
+[specs/004-client-crud-ui/quickstart.md](specs/004-client-crud-ui/quickstart.md).
 Para probar el rendimiento con una cartera grande:
 `python scripts/make_fake_portfolio.py 1000 > tmp/clients_1000.json` y levantar la API con
 una base nueva: `HEALTH_SCORE_DB` apuntando a un archivo que no exista (p. ej.

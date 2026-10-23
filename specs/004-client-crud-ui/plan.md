@@ -108,15 +108,18 @@ frontend/src/
 │   ├── client.ts                # + createClient, updateClient, deleteClient; 422 de /clients; 409 → cuil
 │   └── client.test.ts           # + ubicaciones de 422, 409, 204
 ├── components/
-│   ├── ClientFields.tsx         # NUEVO: campos CUIT/CUIL, nombre y métricas (alta y edición)
+│   ├── ClientFields.tsx         # NUEVO: campos CUIT/CUIL, nombre y métricas + blankMetricErrors (alta y edición)
 │   ├── Notice.tsx               # NUEVO: aviso de confirmación (Alert, role=status, cerrar, acción)
+│   ├── Notice.test.tsx          # NUEVO
 │   ├── StatePanel.tsx           # + action?: ReactNode
 │   └── ui/alert-dialog.tsx      # NUEVO: componente shadcn/ui
 ├── lib/
 │   ├── display.ts               # + CUIL_LABEL
-│   ├── useHashRoute.ts          # + blocker opcional para cambios sin guardar
+│   ├── display.test.ts          # + CUIL_LABEL
+│   ├── useHashRoute.ts          # + blocker opcional, pendingRoute, allowNext para cambios sin guardar
 │   └── useHashRoute.test.ts     # + navegación bloqueada
 ├── App.tsx                      # notice, onClientsChanged, onDeleted, diálogo de descartar
+├── App.test.tsx                 # NUEVO: aviso del alta, recarga de la cartera, respuesta tardía
 ├── pages/new-client/
 │   ├── ScoreForm.tsx            # usa ClientFields
 │   ├── NewClientPage.tsx        # snapshot calculatedFrom, guardar, errores, limpiar

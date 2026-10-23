@@ -3,7 +3,7 @@
 
 import { vi } from "vitest"
 
-import type { MetricRange, PortfolioResult, ScoringConfig } from "@/api/types"
+import type { ClientRecord, MetricRange, PortfolioResult, ScoringConfig } from "@/api/types"
 
 export const portfolioFixture: PortfolioResult = {
   results: [
@@ -79,6 +79,14 @@ export const metricsFixture: MetricRange[] = [
   { name: "days_to_renewal", min: 0, max: null, message: "debe ser un entero mayor o igual a 0" },
 ]
 
+// CUIL sintético libre (no está en data/clients.json): 20-90000024-4.
+export const clientRecordFixture: ClientRecord = {
+  client_id: "3f2b8c1e-9a4d-4e7b-8c21-5d6f0a9b1c2d",
+  cuil: "20900000244",
+  name: "Cliente Ficticio",
+  metrics: { usage: 60, support_tickets: 3, nps: 7, days_to_renewal: 90 },
+}
+
 export type StubRoute =
   | { status: number; body?: unknown }
   | ((init?: RequestInit) => Promise<Response>)
@@ -98,7 +106,9 @@ export function stubFetch(routes: Record<string, StubRoute>) {
     const route = routes[key]
     if (!route) return new Response(JSON.stringify({ detail: "Not Found" }), { status: 404 })
     if (typeof route === "function") return route(init)
-    return new Response(route.body === undefined ? "" : JSON.stringify(route.body), {
+    // Response no admite cuerpo con 204: sin body se responde con null.
+    if (route.status === 204 || route.body === undefined) return new Response(null, { status: route.status })
+    return new Response(JSON.stringify(route.body), {
       status: route.status,
       headers: { "Content-Type": "application/json" },
     })

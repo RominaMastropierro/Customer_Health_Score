@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  CUIL_LABEL,
   displayName,
   formatCuil,
   formatMetric,
@@ -80,5 +81,11 @@ describe("CUIL (spec 003)", () => {
   it("no coincide si el cliente no tiene CUIL", () => {
     expect(matchesCuil(null, "209")).toBe(false)
     expect(matchesCuil(undefined, "209")).toBe(false)
+  })
+})
+
+describe("rótulo CUIT/CUIL (spec 004)", () => {
+  it("es el único texto que nombra la identificación fiscal", () => {
+    expect(CUIL_LABEL).toBe("CUIT/CUIL")
   })
 })

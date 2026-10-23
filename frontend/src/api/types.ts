@@ -10,6 +10,18 @@ export interface ClientMetrics {
   days_to_renewal: number
 }
 
+// Cuerpo de POST /clients y PUT /clients/{id}: sin client_id, que lo genera el servicio.
+export interface ClientData {
+  cuil: string
+  name: string | null
+  metrics: ClientMetrics
+}
+
+// El servicio devuelve el cuil normalizado, sin guiones.
+export interface ClientRecord extends ClientData {
+  client_id: string
+}
+
 export interface SubScores {
   usage: number
   support_tickets: number

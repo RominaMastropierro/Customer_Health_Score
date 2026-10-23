@@ -65,3 +65,12 @@ describe("CUIL en las tarjetas (US6, spec 003)", () => {
     expect(invalid).toHaveTextContent("—")
   })
 })
+
+describe("Rótulo CUIT/CUIL en las tarjetas (spec 004)", () => {
+  it("nombra el valor para lectores de pantalla sin mostrar el rótulo", () => {
+    renderPage()
+    const acme = screen.getByText("Acme Ficticia").closest("article")!
+    expect(acme).toHaveTextContent("CUIT/CUIL 20-90000001-5")
+    expect(within(acme).getByText("CUIT/CUIL")).toHaveClass("sr-only")
+  })
+})

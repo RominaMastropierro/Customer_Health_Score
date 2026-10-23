@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { Plus } from "lucide-react"
 
 import type { PortfolioResult } from "@/api/types"
 import type { RemoteState } from "@/api/useApi"
@@ -10,6 +11,17 @@ import DistributionChart from "@/pages/portfolio/DistributionChart"
 import KpiCards from "@/pages/portfolio/KpiCards"
 
 const TIME = new Intl.DateTimeFormat("es", { hour: "2-digit", minute: "2-digit" })
+
+function NewClientLink() {
+  return (
+    <Button asChild>
+      <a href="#/nuevo">
+        <Plus aria-hidden="true" />
+        Nuevo cliente
+      </a>
+    </Button>
+  )
+}
 
 export default function PortfolioPage({
   state,
@@ -36,15 +48,18 @@ export default function PortfolioPage({
         title="Cartera de clientes"
         description="Supervisa la salud de tu cartera y detecta cuentas que necesitan atención."
         action={
-          <Button variant="secondary" onClick={reload} aria-label="Actualizar cartera">
-            <span aria-hidden="true" className="bg-top size-2 rounded-full" />
-            Actualizado {loadedAt ? TIME.format(loadedAt) : "ahora"}
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" onClick={reload} aria-label="Actualizar cartera">
+              <span aria-hidden="true" className="bg-top size-2 rounded-full" />
+              Actualizado {loadedAt ? TIME.format(loadedAt) : "ahora"}
+            </Button>
+            <NewClientLink />
+          </div>
         }
       />
       <KpiCards summary={summary} />
       {summary.total === 0 ? (
-        <StatePanel type="empty" />
+        <StatePanel type="empty" action={<NewClientLink />} />
       ) : (
         <section className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(280px,1fr)_2fr]">
           <DistributionChart summary={summary} />
