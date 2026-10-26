@@ -1,18 +1,19 @@
 <!--
 Sync Impact Report
-- Cambio de versión: 2.1.0 → 2.2.0 (MINOR: nueva subsección y ampliación de las puertas de
-  calidad; no se elimina ni redefine ningún principio)
-- Principios modificados: ninguno
-- Secciones añadidas:
-  Restricciones Técnicas › Contenedores y despliegue: la ejecución en contenedores sigue el
-  OWASP Docker Security Cheat Sheet; las excepciones se documentan.
-- Secciones modificadas:
-  Flujo de Desarrollo y Puertas de Calidad: se agregan hadolint, escaneo de imagen y revisión
-  de Dockerfile/compose contra el checklist OWASP.
+- Cambio de versión: 2.2.0 → 2.3.0 (MINOR: ampliación sustancial de la guía del Principio IX
+  con una excepción acotada; la regla de datos ficticios se mantiene para código, tests,
+  fixtures, ejemplos, demos e historial)
+- Principios modificados: IX. Privacidad de los Datos (NO NEGOCIABLE), mismo título; se
+  agrega la excepción "consulta en tiempo de uso" de fuentes públicas oficiales y su envío a
+  un proveedor de modelo de IA que no entrene con esos datos, sin guardar ni registrar nada.
+- Secciones añadidas: ninguna
 - Secciones eliminadas: ninguna
-- Motivo: el proyecto se dockerizó (API + dashboard) con artefactos endurecidos.
-- Artefactos dependientes: specs/003-client-persistence-crud (spec.md, plan.md, tasks.md)
-  deben reflejar el despliegue en contenedores y justificar Docker/nginx según el Principio I.
+- Motivo: specs/005-bcra-credit-check (consulta a la Central de Deudores del BCRA en el alta
+  de clientes, con un texto redactado por un modelo de IA).
+- Artefactos dependientes: el plan de specs/005-bcra-credit-check debe justificar el
+  proveedor del modelo y verificar las condiciones de la excepción en su Constitution Check.
+  Plantillas (.specify/templates/*) revisadas: no requieren cambios, porque leen la
+  constitución al ejecutarse.
 - TODOs diferidos: ninguno
 -->
 
@@ -118,11 +119,25 @@ fuente.
 
 ### IX. Privacidad de los Datos (NO NEGOCIABLE)
 
-- Solo MUST utilizarse datos ficticios.
+- Solo MUST utilizarse datos ficticios, salvo la excepción de consulta en tiempo de uso
+  descripta abajo.
 - Está prohibido incorporar información real de clientes en el código, los datos de ejemplo,
   los tests, los fixtures, las demostraciones o el historial del repositorio.
+- **Excepción: consulta en tiempo de uso.** El sistema MAY consultar, a pedido de la persona
+  usuaria, fuentes públicas oficiales que devuelven datos reales (p. ej. la Central de
+  Deudores del BCRA) y MAY enviar esa respuesta a un proveedor de modelo de IA para redactar
+  un texto para esa persona, con estas condiciones:
+  - el proveedor del modelo MUST NOT usar los datos enviados para entrenar modelos, y su
+    elección MUST justificarse en el plan de la funcionalidad;
+  - los datos reales MUST solo mostrarse: MUST NOT guardarse en ningún almacenamiento ni
+    registrarse en logs (tampoco la identificación consultada, el prompt ni el texto
+    generado);
+  - las pruebas, los datos de ejemplo, los fixtures y las demostraciones MUST seguir siendo
+    exclusivamente ficticios y MUST usar versiones simuladas de esas fuentes y del modelo.
 
-**Justificación**: elimina el riesgo de exponer información sensible de clientes reales.
+**Justificación**: elimina el riesgo de exponer información sensible de clientes reales. La
+excepción permite el valor de consultar fuentes oficiales al momento del alta sin que ningún
+dato real quede en el sistema ni en el repositorio.
 
 ### X. Desarrollo Incremental y Demostrable
 
@@ -222,4 +237,4 @@ vulnerabilidad en la aplicación o en sus dependencias.
 - **Cumplimiento**: cada plan y cada revisión de cambios MUST verificar el cumplimiento de esta
   constitución. Toda complejidad adicional MUST justificarse explícitamente.
 
-**Version**: 2.2.0 | **Ratified**: 2026-10-10 | **Last Amended**: 2026-10-22
+**Version**: 2.3.0 | **Ratified**: 2026-10-10 | **Last Amended**: 2026-10-26

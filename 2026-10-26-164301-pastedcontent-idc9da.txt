@@ -1,0 +1,652 @@
+
+> <ide_opened_file>The user opened the file
+  c:\Users\Usuario\Customer_Health_Score\central-deudores-v1.md in the IDE.
+  This may or may not be related to the current task.</ide_opened_file>
+
+> quiero incorpora en mi aplicacion una funcionalidad que al escribir un valor
+  en el campo CUIT del formulario de alta de un cliente la aplicacion consulte
+  los datos de deudores del BCRA. Para esto el camino a seguir sera: la
+  aplicacion front consulta a un endpoint de nuestra API pidiendo los datos de
+  deudores para el CUIT ingresado. Nuestra API al recibir la peticion con el
+  CUIT debe consultar la API publica del BCRA con la informacion que obtiene
+  utiliza al archivocentral-deudores-v1.md y muestre un texto en pantalla. En
+  el formulario existente para agregar un cliente, el usuario ingresa un
+  CUIT/CUIL en el campo correspondiente.
+
+  Cuando el campo pierde el foco (blur), se debe ejecutar el siguiente flujo:
+
+  Normalizar el CUIT/CUIL eliminando guiones, espacios y otros separadores
+  permitidos.
+
+  Validar que tenga 11 dígitos y comprobar su dígito verificador mediante el
+  algoritmo correspondiente.
+
+  Si el valor es inválido, mostrar un mensaje claro de validación y no realizar
+  ninguna consulta.
+
+  Si es válido, enviar una solicitud al endpoint del backend encargado de
+  consultar la situación crediticia.
+
+  Mientras se realiza la consulta, mostrar un indicador de carga y evitar
+  solicitudes duplicadas para el mismo valor.
+
+  Cuando llegue la respuesta, mostrar un mensaje comprensible para el usuario.
+
+  Si el usuario modifica el CUIT/CUIL después de una consulta, invalidar el
+  resultado anterior y consultar nuevamente cuando corresponda.
+
+  No realizar la consulta directamente desde el navegador a la API del BCRA. La
+  comunicación con el BCRA debe pasar por nuestro backend.
+
+● Voy a explorar el proyecto primero.
+
+  Ran 5 shell commands (ctrl+o to expand)
+
+● Antes de codear, encontré tres puntos a resolver: el flujo spec→plan→tasks de
+  la constitución, la red backend interna en compose.yaml que bloquea el acceso
+  a api.bcra.gob.ar (necesita una red de salida documentada), y la duplicación
+  de la validación del dígito verificador entre cuil.py y el front, que conviene
+  cubrir con tests compartidos. Necesito que decidas cómo manejar el acceso a
+  internet del contenedor antes de seguir.
+
+● User answered Claude's questions:
+  ⎿  · ¿Cómo querés avanzar con esta funcionalidad? → Spec Kit (Recommended)
+
+● Skill(speckit-specify)
+  ⎿  Successfully loaded skill
+
+  Listed 1 directory (ctrl+o to expand)
+
+● No hay .specify/extensions.yml, así que no hay hooks. Creo
+  specs/005-bcra-credit-check.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Escribo la spec.
+
+● Write(specs\005-bcra-credit-check\spec.md)
+  ⎿  Wrote 182 lines to specs\005-bcra-credit-check\spec.md
+      1 # Feature Specification: Consulta de Situación Crediticia en el B
+      2
+      4
+      5 **Created**: 2026-10-24
+      7 **Status**: Draft
+      9 **Input**: User description: "Consulta de situación crediticia en
+         formulario existente para agregar un cliente, el usuario ingresa
+         un CUIT/CUIL en el campo correspondiente. Cuando el campo pierde
+        cios y otros separadores permitidos; validar que tenga 11 dígitos
+        ndiente; si el valor es inválido, mostrar un mensa
+     … +465 lines (ctrl+o to expand)
+
+● Verifiqué que el CUIT de ejemplo 20900000244 tiene dígito verificador válido y
+  que 20900000245 no. Ahora el checklist:
+
+● Write(specs\005-bcra-credit-check\checklists\requirements.md)
+  ⎿  Wrote 35 lines to
+     specs\005-bcra-credit-check\checklists\requirements.md
+       1 # Specification Quality Checklist: Consulta de Situación Crediti
+         cia en el BCRA al Dar de Alta un Cliente
+       2
+         ore proceeding to planning
+       4 **Created**: 2026-10-24
+       5 **Feature**: [spec.md](../spec.md)
+       6
+       8
+       9 - [x] No implementation details (languages, frameworks, APIs)
+      10 - [x] Focused on user value and business needs
+     … +35 lines (ctrl+o to expand)
+
+● Creé la spec en specs/005-bcra-credit-check/spec.md. Antes de seguir hay que
+  resolver dos dudas que cambian lo que se construye.
+
+  - Historias de usuario: (P1) ver la situación crediticia al salir del campo;
+    (P1) un CUIT mal escrito muestra un mensaje y no consulta; (P2) al cambiar
+    el CUIT se borra el resultado anterior; (P2) mensajes para "sin datos" y
+    para cuando el BCRA no responde, con "Reintentar".
+  - Decisiones que tomé por mi cuenta: el resultado solo informa (no cambia el
+    score, no bloquea el alta y no se guarda). Solo se usa el método "Deudas",
+    tomando el período más reciente. El tiempo límite es de 10 s. La edición de
+    clientes queda fuera.
+  - Cambia la spec 004: su FR-021 dejaba el dígito verificador solo al servidor.
+    Ahora el front también lo comprueba, y tiene que pasar los mismos casos de
+    prueba que el servidor.
+  - Checklist (requirements.md
+    (specs/005-bcra-credit-check/checklists/requirements.md)): pasa todo salvo
+    "No quedan [NEEDS CLARIFICATION]".
+  - Otros cambios: .specify/feature.json ahora apunta a esta spec. No creé una
+    rama de git (no hay hooks configurados) y no hice commit.
+
+  Pregunta 1: Separadores del CUIT y el formato que acepta el alta
+
+  Contexto: Pediste quitar guiones, espacios y otros separadores antes de
+  consultar. Pero al guardar, el servidor (spec 003) y el campo (spec 004) solo
+  aceptan 20900000244 o 20-90000024-4. Un valor como 20 90000024 4 se
+  consultaría bien y después el alta lo rechazaría.
+
+  Qué hay que decidir: ¿cómo se compatibiliza la consulta con el alta?
+
+  ┌────────┬──────────────────────────────┬─────────────────────────────────┐
+  │ Opción │          Respuesta           │           Qué implica           │
+  ├────────┼──────────────────────────────┼─────────────────────────────────┤
+  │        │ Al salir del campo con un    │ El alta siempre funciona.       │
+  │ A      │ CUIT válido, se reescribe    │ Cambia FR-001 de la spec 004,   │
+  │        │ como XX-XXXXXXXX-X           │ que pedía no reformatear el     │
+  │        │                              │ campo.                          │
+  ├────────┼──────────────────────────────┼─────────────────────────────────┤
+  │        │ El servidor pasa a aceptar   │ Se toca la regla única del CUIL │
+  │ B      │ espacios y puntos al guardar │  (spec 003) y sus tests. El     │
+  │        │                              │ campo no se reformatea.         │
+  ├────────┼──────────────────────────────┼─────────────────────────────────┤
+  │        │ La consulta solo acepta los  │ Cambia lo mínimo, pero no se    │
+  │ C      │ formatos del alta (11        │ quitan "espacios y otros        │
+  │        │ dígitos o con guiones)       │ separadores" como pediste.      │
+  ├────────┼──────────────────────────────┼─────────────────────────────────┤
+  │ Otra   │ Tu propia respuesta          │ Contame cómo debería            │
+  │        │                              │ comportarse.                    │
+  └────────┴──────────────────────────────┴─────────────────────────────────┘
+
+  Pregunta 2: Principio IX (solo datos ficticios)
+
+  Contexto: La constitución dice que el Principio IX no se negocia: "Solo MUST
+  utilizarse datos ficticios". Con un CUIT real, esta consulta trae al dashboard
+  datos reales de deuda del BCRA.
+
+  Qué hay que decidir: ¿cómo se compatibiliza la funcionalidad con ese
+  principio?
+
+  Opción: A
+  Respuesta: Se muestran datos reales mientras se usa la app, sin guardarlos ni
+  registrarlos en logs. Tests y demos solo con CUIT sintéticos y BCRA simulado
+  Qué implica: Es lo que dice hoy FR-022. Conviene dejar la excepción escrita en
+
+  el plan.
+  ────────────────────────────────────────
+  Opción: B
+  Respuesta: Enmendar la constitución con /speckit-constitution para permitir
+  consultas a fuentes públicas reales
+  Qué implica: La regla queda explícita y con versión nueva. Agrega un paso
+  antes
+  del plan.
+  ────────────────────────────────────────
+  Opción: C
+  Respuesta: La consulta real viene apagada y se activa por configuración. Por
+  defecto se usa un BCRA simulado
+  Qué implica: Cumple el principio al pie de la letra, pero para usar la
+  consulta
+  real hay que activarla.
+  ────────────────────────────────────────
+  Opción: Otra
+  Respuesta: Tu propia respuesta
+  Qué implica: Contame qué preferís.
+
+  Respondé, por ejemplo, "Q1: A, Q2: A". Con eso actualizo la spec, vuelvo a
+  validar el checklist y queda lista para /speckit-plan. También podés correr
+  /speckit-clarify.
+
+> <ide_opened_file>The user opened the file c:\Users\Usuario\Customer_Health_Sc
+  ore\specs\003-client-persistence-crud\data-model.md in the IDE. This may or
+  may not be related to the current task.</ide_opened_file>
+
+> Q1: otra: el CUIL debe tener 11 dígitos, con o sin guiones (XX-XXXXXXXX-X)
+  guardando en el front como lo veniamos trabajando, pero la API del BCRA
+  necesita que hagamos la consulta sin guiones. Q2:B
+
+● Actualizo la spec con las dos respuestas.
+
+● Update(specs\005-bcra-credit-check\spec.md)
+  ⎿  Added 7 lines
+       8  
+       9  **Input**: User description: "Consulta de situación crediticia 
+          en la Central de Deudores del BCRA al dar de alta un cliente. E
+          n el formulario existente para agregar un cliente, el usuario i
+          ngresa un CUIT/CUIL en el campo correspondiente. Cuando el camp
+          o pierde el foco (blur): normalizar el CUIT/CUIL eliminando gui
+          ones, espacios y otros separadores permitidos; validar que teng
+          a 11 dígitos y comprobar su dígito verificador mediante el algo
+          ritmo correspondiente; si el valor es inválido, mostrar un mens
+          aje claro de validación y no realizar ninguna consulta; si es v
+          álido, enviar una solicitud al endpoint de nuestro backend enca
+          rgado de consultar la situación crediticia; mientras se realiza
+           la consulta, mostrar un indicador de carga y evitar solicitude
+          s duplicadas para el mismo valor; cuando llegue la respuesta, m
+          ostrar un mensaje comprensible para el usuario; si el usuario m
+          odifica el CUIT/CUIL después de una consulta, invalidar el resu
+          ltado anterior y consultar nuevamente cuando corresponda. No re
+          alizar la consulta directamente desde el navegador a la API del
+           BCRA: el front consulta a un endpoint de nuestra API, y nuestr
+          a API consulta la API pública del BCRA (Central de Deudores v1.
+          0, endpoint GET api.bcra.gob.ar/CentralDeDeudores/v1.0/Deudas/{
+          identificacion}, documentado en central-deudores-v1.md en la ra
+          íz del repo) e interpreta la respuesta (situación 1 a 5 por ent
+          idad, montos en miles de pesos, días de atraso, respuestas 400/
+          404/500) para producir el texto que se muestra en pantalla."
+      10  
+      11 +## Clarifications                                              
+      12 +                                                               
+      13 +### Session 2026-10-26                                         
+      14 +                                                               
+      15 +- Q: ¿Cómo se compatibiliza quitar separadores para la consulta
+         + con el formato que acepta el alta (solo 11 dígitos o `XX-XXXXX
+         +XXX-X`)? → A: El campo acepta los mismos formatos que el alta: 
+         +11 dígitos, con o sin guiones (`XX-XXXXXXXX-X`), y el valor se 
+         +conserva en el formulario tal como se escribió, como en la spec
+         + 004. El único separador permitido es el guion en sus posicione
+         +s canónicas; espacios, puntos u otros caracteres son un error d
+         +e formato. Para consultar al BCRA, que exige 11 dígitos sin gui
+         +ones, se quitan los guiones.                                   
+      16 +- Q: ¿Cómo se compatibiliza la consulta de datos reales del BCR
+         +A con el Principio IX (solo datos ficticios)? → A: Se enmienda 
+         +la constitución con `/speckit-constitution` para permitir consu
+         +ltar fuentes públicas oficiales con datos reales en tiempo de u
+         +so, sin persistirlos ni registrarlos. Las pruebas, los datos de
+         + ejemplo y las demostraciones siguen siendo solo ficticios.    
+      17 +                                                               
+      18  **Depende de**: [003-client-persistence-crud](../003-client-per
+          sistence-crud/spec.md) (regla del CUIT/CUIL: formato y dígito v
+          erificador) y [004-client-crud-ui](../004-client-crud-ui/spec.m
+          d) (pantalla "Nuevo cliente" con el campo "CUIT/CUIL"). Fuente 
+          externa: Central de Deudores del BCRA, método "Deudas", descrip
+          ta en [central-deudores-v1.md](../../central-deudores-v1.md).
+      19  
+      20  **Cambia de la spec 004**: FR-021 de la spec 004 reservaba el d
+          ígito verificador al servicio. Esta feature lo comprueba tambié
+          n en el dashboard, solo para decidir si consulta al BCRA (FR-00
+          3); guardar el cliente sigue validándose en el servicio sin cam
+          bios.
+
+● Update(specs\005-bcra-credit-check\spec.md)
+  ⎿  Added 1 line, removed 1 line
+      15  - Q: ¿Cómo se compatibiliza quitar separadores para la consulta
+           con el formato que acepta el alta (solo 11 dígitos o `XX-XXXXX
+          XXX-X`)? → A: El campo acepta los mismos formatos que el alta: 
+          11 dígitos, con o sin guiones (`XX-XXXXXXXX-X`), y el valor se 
+          conserva en el formulario tal como se escribió, como en la spec
+           004. El único separador permitido es el guion en sus posicione
+          s canónicas; espacios, puntos u otros caracteres son un error d
+          e formato. Para consultar al BCRA, que exige 11 dígitos sin gui
+          ones, se quitan los guiones.
+      16  - Q: ¿Cómo se compatibiliza la consulta de datos reales del BCR
+          A con el Principio IX (solo datos ficticios)? → A: Se enmienda 
+          la constitución con `/speckit-constitution` para permitir consu
+          ltar fuentes públicas oficiales con datos reales en tiempo de u
+          so, sin persistirlos ni registrarlos. Las pruebas, los datos de
+           ejemplo y las demostraciones siguen siendo solo ficticios.
+      17  
+      18 -**Depende de**: [003-client-persistence-crud](../003-client-per
+         -sistence-crud/spec.md) (regla del CUIT/CUIL: formato y dígito v
+         -erificador) y [004-client-crud-ui](../004-client-crud-ui/spec.m
+         -d) (pantalla "Nuevo cliente" con el campo "CUIT/CUIL"). Fuente 
+         -externa: Central de Deudores del BCRA, método "Deudas", descrip
+         -ta en [central-deudores-v1.md](../../central-deudores-v1.md).  
+      18 +**Depende de**: [003-client-persistence-crud](../003-client-per
+         +sistence-crud/spec.md) (regla del CUIT/CUIL: formato y dígito v
+         +erificador) y [004-client-crud-ui](../004-client-crud-ui/spec.m
+         +d) (pantalla "Nuevo cliente" con el campo "CUIT/CUIL"). Fuente 
+         +externa: Central de Deudores del BCRA, método "Deudas", descrip
+         +ta en [central-deudores-v1.md](../../central-deudores-v1.md). R
+         +equiere la enmienda del Principio IX de la constitución (Clarif
+         +ications) antes de implementarse.                              
+      19  
+      20  **Cambia de la spec 004**: FR-021 de la spec 004 reservaba el d
+          ígito verificador al servicio. Esta feature lo comprueba tambié
+          n en el dashboard, solo para decidir si consulta al BCRA (FR-00
+          3); guardar el cliente sigue validándose en el servicio sin cam
+          bios.
+      21  
+
+● Update(specs\005-bcra-credit-check\spec.md)
+  ⎿  Added 2 lines, removed 2 lines
+      51  
+      52  **Acceptance Scenarios**:
+      53  
+      54 -1. **Given** el campo "CUIT/CUIL", **When** se escribe un valor
+         - que tras quitar separadores no tiene exactamente 11 dígitos (p
+         -. ej. `20-9000002-4`) y el campo pierde el foco, **Then** se mu
+         -estra junto al campo "El CUIT/CUIL debe tener 11 dígitos" y no 
+         -se realiza ninguna consulta.                                   
+      55 -2. **Given** el campo "CUIT/CUIL", **When** se escribe un valor
+         - con caracteres que no son dígitos ni separadores permitidos (p
+         -. ej. `20A90000024`), **Then** se muestra un mensaje que indica
+         - que solo se admiten números y separadores, y no se consulta.  
+      54 +1. **Given** el campo "CUIT/CUIL", **When** se escribe un valor
+         + que no tiene la forma de 11 dígitos ni de `XX-XXXXXXXX-X` (p. 
+         +ej. `20-9000002-4`, `209000002`, `20A90000024`, `20-900000244` 
+         +o `20 90000024 4`) y el campo pierde el foco, **Then** se muest
+         +ra junto al campo "El CUIT/CUIL debe tener 11 dígitos, con o si
+         +n guiones (XX-XXXXXXXX-X)" y no se realiza ninguna consulta.   
+      55 +2. **Given** un mensaje de formato visible, **When** se mira el
+         + campo, **Then** conserva el valor tal como se escribió: el das
+         +hboard no lo reformatea ni lo corrige.                         
+      56  3. **Given** el campo "CUIT/CUIL", **When** se escribe un valor
+           de 11 dígitos con dígito verificador incorrecto (p. ej. `20900
+          000245`), **Then** se muestra junto al campo "El dígito verific
+          ador del CUIT/CUIL no es válido" y no se consulta.
+      57  4. **Given** el campo "CUIT/CUIL" vacío, **When** pierde el foc
+          o, **Then** no se muestra error ni se consulta (el campo vacío 
+          solo se señala al guardar, como hoy).
+      58  5. **Given** un mensaje de validación visible, **When** se corr
+          ige el valor y el campo pierde el foco con un CUIT válido, **Th
+          en** el mensaje desaparece y se realiza la consulta.
+
+● Update(specs\005-bcra-credit-check\spec.md)
+  ⎿  Added 1 line, removed 1 line
+       99  
+      100  ### Edge Cases
+      101  
+      102 -- ¿Qué pasa si el CUIT se escribe con espacios, puntos o guion
+          -es en cualquier posición (p. ej. ` 20 90000024 4 ` o `20.90000
+          -024.4`)? Para la consulta se quitan los separadores permitidos
+          - (guiones, espacios y puntos) antes de validar. [NEEDS CLARIFI
+          -CATION: la spec 004 (FR-001) y el servicio de la spec 003 solo
+          - aceptan al guardar 11 dígitos o el formato `XX-XXXXXXXX-X`; u
+          -n valor con espacios o puntos se consultaría bien pero el alta
+          - lo rechazaría. ¿El campo debe reescribirse con el valor norma
+          -lizado al perder el foco, el servicio debe pasar a aceptar eso
+          -s separadores al guardar, o la consulta solo debe aceptar los 
+          -mismos formatos que el alta?]                                 
+      102 +- ¿Qué pasa si el CUIT se escribe con espacios, puntos o guion
+          +es fuera de lugar (p. ej. ` 20-90000024-4`, `20.90000024.4` o 
+          +`2090-000024-4`)? Es un error de formato: se muestra el mensaj
+          +e de FR-002 y no se consulta, igual que el alta lo rechazaría 
+          +al guardar (spec 004). El dashboard no recorta ni reescribe el
+          + valor.                                                       
+      103  - ¿Qué pasa si la persona sale del campo y vuelve a entrar muy
+            rápido? Solo se consulta al perder el foco y nunca más de una
+            vez a la vez para el mismo CUIT normalizado (US3).
+      104  - ¿Qué pasa si la persona sale de la pantalla con una consulta
+            en curso? La consulta se descarta y su respuesta no se muestr
+           a en ninguna otra pantalla.
+      105  - ¿Qué pasa si la respuesta de un CUIT anterior llega después 
+           de la de uno nuevo? Solo se muestra la respuesta que correspon
+           de al valor actual del campo.
+
+● Update(specs\005-bcra-credit-check\spec.md)
+  ⎿  Added 3 lines, removed 3 lines
+      117  
+      118  **Disparo y validación en el dashboard**
+      119  
+      120 -- **FR-001**: En la pantalla "Nuevo cliente", cuando el campo 
+          -"CUIT/CUIL" pierde el foco y no está vacío, el dashboard MUST 
+          -normalizar el valor quitando los separadores permitidos (guion
+          -es, espacios y puntos) y decidir con el valor normalizado si c
+          -onsulta. Mientras se escribe MUST NOT consultarse.            
+      121 -- **FR-002**: Si el valor normalizado contiene caracteres que 
+          -no son dígitos o no tiene exactamente 11 dígitos, el dashboard
+          - MUST mostrar junto al campo un mensaje de validación en españ
+          -ol que indique el problema y MUST NOT consultar.              
+      122 -- **FR-003**: Si tiene 11 dígitos, el dashboard MUST comprobar
+          - el dígito verificador con el mismo algoritmo oficial (módulo 
+          -11) que usa el servicio; si no es válido, MUST mostrar "El díg
+          -ito verificador del CUIT/CUIL no es válido" y MUST NOT consult
+          -ar. Esta comprobación MUST definirse en un único lugar del das
+          -hboard y MUST verificarse con los mismos casos de prueba que l
+          -a regla del servicio (constitución, Principio VI).            
+      120 +- **FR-001**: En la pantalla "Nuevo cliente", cuando el campo 
+          +"CUIT/CUIL" pierde el foco y no está vacío, el dashboard MUST 
+          +validar el valor y, si es válido, normalizarlo quitando los gu
+          +iones para obtener los 11 dígitos con que se consulta. El camp
+          +o MUST conservar el valor tal como se escribió (spec 004, FR-0
+          +01). Mientras se escribe MUST NOT consultarse.                
+      121 +- **FR-002**: Los formatos admitidos MUST ser los mismos que a
+          +cepta el alta (spec 003): exactamente 11 dígitos, o `XX-XXXXXX
+          +XX-X` con los guiones en esas posiciones. Cualquier otro valor
+          + (otra cantidad de dígitos, letras, espacios, puntos u otros s
+          +eparadores, guiones fuera de lugar) MUST mostrar junto al camp
+          +o "El CUIT/CUIL debe tener 11 dígitos, con o sin guiones (XX-X
+          +XXXXXXX-X)" y MUST NOT consultar.                             
+      122 +- **FR-003**: Si el formato es válido, el dashboard MUST compr
+          +obar el dígito verificador con el mismo algoritmo oficial (mód
+          +ulo 11) que usa el servicio; si no es válido, MUST mostrar "El
+          + dígito verificador del CUIT/CUIL no es válido" y MUST NOT con
+          +sultar. Esta comprobación MUST definirse en un único lugar del
+          + dashboard y MUST verificarse con los mismos casos de prueba q
+          +ue la regla del servicio (constitución, Principio VI).        
+      123  - **FR-004**: Un campo vacío al perder el foco MUST NOT mostra
+           r error ni consultar.
+      124  
+      125  **Consulta**
+
+● Update(specs\005-bcra-credit-check\spec.md)
+  ⎿  Added 1 line, removed 1 line
+      124  
+      125  **Consulta**
+      126  
+      127 -- **FR-005**: Si el valor es válido, el dashboard MUST pedir l
+          -a situación crediticia a nuestro servicio enviando el CUIT nor
+          -malizado. El navegador MUST NOT comunicarse directamente con e
+          -l BCRA.                                                       
+      127 +- **FR-005**: Si el valor es válido, el dashboard MUST pedir l
+          +a situación crediticia a nuestro servicio enviando el CUIT nor
+          +malizado (11 dígitos, sin guiones). El navegador MUST NOT comu
+          +nicarse directamente con el BCRA.                             
+      128  - **FR-006**: Mientras la consulta está en curso, el dashboard
+            MUST mostrar junto al campo un indicador de carga accesible (
+           "Consultando situación en el BCRA…") y MUST NOT enviar otra so
+           licitud para el mismo CUIT normalizado.
+      129  - **FR-007**: Si el campo pierde el foco con el mismo CUIT nor
+           malizado que ya tiene un resultado visible, MUST NOT repetirse
+            la consulta.
+      130  - **FR-008**: Al modificar el contenido del campo, el dashboar
+           d MUST quitar de inmediato el resultado anterior y descartar c
+           ualquier consulta en curso; una respuesta que no corresponde a
+           l valor actual del campo MUST NOT mostrarse.
+
+● Update(specs\005-bcra-credit-check\spec.md)
+  ⎿  Added 1 line, removed 1 line
+      132  
+      133  **Servicio: consulta e interpretación**
+      134  
+      135 -- **FR-010**: Nuestro servicio MUST ofrecer una operación docu
+          -mentada que recibe un CUIT/CUIL, lo valida con la regla única 
+          -de la spec 003 (rechazando un valor inválido con un error de v
+          -alidación en español y sin consultar al BCRA) y consulta el mé
+          -todo "Deudas" de la Central de Deudores del BCRA.             
+      135 +- **FR-010**: Nuestro servicio MUST ofrecer una operación docu
+          +mentada que recibe un CUIT/CUIL, lo valida con la regla única 
+          +de la spec 003 (rechazando un valor inválido con un error de v
+          +alidación en español y sin consultar al BCRA) y consulta, con 
+          +los 11 dígitos sin guiones que exige el BCRA, el método "Deuda
+          +s" de la Central de Deudores del BCRA.                        
+      136  - **FR-011**: El servicio MUST interpretar la respuesta del BC
+           RA y devolver al dashboard un resultado ya interpretado, con u
+           no de estos estados: **con deudas**, **sin datos** o **no disp
+           onible**. El dashboard solo presenta ese resultado; MUST NOT i
+           nterpretar la respuesta del BCRA por su cuenta.
+      137  - **FR-012**: Para el estado **con deudas**, el servicio MUST 
+           tomar el período más reciente y devolver: CUIT, denominación, 
+           período, peor situación (1 a 5) con su descripción, cantidad d
+           e entidades, monto total en pesos (los montos del BCRA vienen 
+           en miles de pesos), máximo de días de atraso (0 se trata como 
+           "no aplicable"), las marcas especiales presentes (refinanciaci
+           ones, recategorización obligatoria, situación jurídica, irrecu
+           perable por disposición técnica, en revisión, proceso judicial
+           ) y el detalle por entidad (nombre, situación, monto y días de
+            atraso).
+      138  - **FR-013**: Las descripciones de cada situación MUST definir
+           se en un único lugar del servicio, a partir del manual del BCR
+           A: 1 "Normal", 2 "Con seguimiento especial / Riesgo bajo", 3 "
+           Con problemas / Riesgo medio", 4 "Con alto riesgo de insolvenc
+           ia / Riesgo alto", 5 "Irrecuperable".
+
+● Update(specs\005-bcra-credit-check\spec.md)
+  ⎿  Added 1 line, removed 1 line
+      150  
+      151  **Privacidad, compatibilidad y calidad**
+      152  
+      153 -- **FR-022**: El resultado de la consulta MUST NOT guardarse j
+          -unto al cliente ni en ningún almacenamiento, y el servicio MUS
+          -T NOT registrar en sus logs la denominación ni los datos de de
+          -uda. [NEEDS CLARIFICATION: la constitución (Principio IX, NO N
+          -EGOCIABLE) exige usar solo datos ficticios, y esta consulta tr
+          -ae al dashboard datos reales del BCRA cuando se escribe un CUI
+          -T real. ¿Se acepta mostrar datos reales en tiempo de uso (sin 
+          -guardarlos ni registrarlos, con pruebas y demostraciones solo 
+          -con CUIT sintéticos y BCRA simulado), se enmienda la constituc
+          -ión para permitirlo, o la consulta real queda deshabilitada po
+          -r defecto y solo se activa por configuración?]                
+      153 +- **FR-022**: El resultado de la consulta MUST NOT guardarse j
+          +unto al cliente ni en ningún almacenamiento, y el servicio MUS
+          +T NOT registrar en sus logs el CUIT consultado, la denominació
+          +n ni los datos de deuda. Mostrar datos reales en tiempo de uso
+          + se apoya en la enmienda del Principio IX de la constitución (
+          +Clarifications); esta feature MUST NOT implementarse antes de 
+          +esa enmienda.                                                 
+      154  - **FR-023**: Las pruebas automatizadas MUST NOT llamar al BCR
+           A real: MUST usar una fuente simulada y CUIT sintéticos (prefi
+           jo `20`, cuerpos `9000xxxx`, como en la spec 003).
+      155  - **FR-024**: Las pruebas MUST cubrir: normalización con cada 
+           separador; validación de longitud, caracteres y dígito verific
+           ador (con los mismos casos en el dashboard y en el servicio); 
+           consulta al perder el foco; no consulta con valor inválido o v
+           acío; indicador de carga; una sola solicitud por CUIT; invalid
+           ación al modificar; descarte de respuestas tardías; interpreta
+           ción de con deudas (peor situación, total, atrasos, marcas, va
+           rios períodos, entidad con datos incompletos), sin datos y no 
+           disponible (error, tráfico, demora, respuesta mal formada); y 
+           el reintento.
+      156  - **FR-025**: Las pantallas y flujos existentes MUST seguir fu
+           ncionando igual; las pruebas existentes del dashboard y del se
+           rvicio MUST seguir pasando sin cambiar sus expectativas.
+● Update(specs\005-bcra-credit-check\spec.md)
+  ⎿  Added 1 line, removed 1 line
+      152  
+      153  - **FR-022**: El resultado de la consulta MUST NOT guardarse j
+           unto al cliente ni en ningún almacenamiento, y el servicio MUS
+           T NOT registrar en sus logs el CUIT consultado, la denominació
+           n ni los datos de deuda. Mostrar datos reales en tiempo de uso
+            se apoya en la enmienda del Principio IX de la constitución (
+           Clarifications); esta feature MUST NOT implementarse antes de 
+           esa enmienda.
+      154  - **FR-023**: Las pruebas automatizadas MUST NOT llamar al BCR
+           A real: MUST usar una fuente simulada y CUIT sintéticos (prefi
+           jo `20`, cuerpos `9000xxxx`, como en la spec 003).
+      155 -- **FR-024**: Las pruebas MUST cubrir: normalización con cada 
+          -separador; validación de longitud, caracteres y dígito verific
+          -ador (con los mismos casos en el dashboard y en el servicio); 
+          -consulta al perder el foco; no consulta con valor inválido o v
+          -acío; indicador de carga; una sola solicitud por CUIT; invalid
+          -ación al modificar; descarte de respuestas tardías; interpreta
+          -ción de con deudas (peor situación, total, atrasos, marcas, va
+          -rios períodos, entidad con datos incompletos), sin datos y no 
+          -disponible (error, tráfico, demora, respuesta mal formada); y 
+          -el reintento.                                                 
+      155 +- **FR-024**: Las pruebas MUST cubrir: normalización con y sin
+          + guiones (se consulta siempre con 11 dígitos sin guiones); rec
+          +hazo de espacios, puntos y guiones fuera de lugar; validación 
+          +de longitud, caracteres y dígito verificador (con los mismos c
+          +asos en el dashboard y en el servicio); consulta al perder el 
+          +foco; no consulta con valor inválido o vacío; indicador de car
+          +ga; una sola solicitud por CUIT; invalidación al modificar; de
+          +scarte de respuestas tardías; interpretación de con deudas (pe
+          +or situación, total, atrasos, marcas, varios períodos, entidad
+          + con datos incompletos), sin datos y no disponible (error, trá
+          +fico, demora, respuesta mal formada); y el reintento.         
+      156  - **FR-025**: Las pantallas y flujos existentes MUST seguir fu
+           ncionando igual; las pruebas existentes del dashboard y del se
+           rvicio MUST seguir pasando sin cambiar sus expectativas.
+      157  - **FR-026**: Si la aplicación se ejecuta en contenedores, el 
+           acceso de salida del servicio a internet MUST limitarse a lo n
+           ecesario para consultar al BCRA, y la excepción a la red inter
+           na MUST documentarse según la constitución (Contenedores y des
+           pliegue).
+      158  
+
+● Update(specs\005-bcra-credit-check\spec.md)
+  ⎿  Added 1 line
+      184  - El tiempo límite de 10 segundos para la consulta al BCRA es 
+           un valor razonable para una API pública; se ajusta en el plan 
+           si hiciera falta.
+      185  - La peor situación se calcula sobre todas las entidades del p
+           eríodo más reciente; el monto total es la suma de los montos d
+           e esas entidades.
+      186  - La denominación que informa el BCRA se muestra pero no se co
+           pia al campo "Nombre" del formulario.
+      187 +- La enmienda del Principio IX solo habilita consultar fuentes
+          + públicas oficiales en tiempo de uso; no habilita guardar dato
+          +s reales ni usarlos en pruebas, ejemplos o demostraciones.    
+      188  - Los mensajes de validación del dashboard dicen "CUIT/CUIL", 
+           siguiendo el rótulo de la spec 004 (FR-028); los mensajes del 
+           servicio para guardar no cambian.
+      189  - No hay autenticación ni permisos, como en las specs anterior
+           es.
+      190  - Las decisiones técnicas (cliente HTTP, forma exacta de la op
+           eración del servicio, componentes de la interfaz, configuració
+           n de red de los contenedores) se definen en el plan, respetand
+           o el stack de la constitución.
+
+  Searched for 1 pattern (ctrl+o to expand)
+
+● No queda ningún marcador. Actualizo el checklist.
+
+● Update(specs\005-bcra-credit-check\checklists\requirements.md)
+  ⎿  Added 1 line, removed 1 line
+      13  
+      14  ## Requirement Completeness
+      15  
+      16 -- [ ] No [NEEDS CLARIFICATION] markers remain                  
+      16 +- [x] No [NEEDS CLARIFICATION] markers remain                  
+      17  - [x] Requirements are testable and unambiguous
+      18  - [x] Success criteria are measurable
+      19  - [x] Success criteria are technology-agnostic (no implementati
+          on details)
+
+● Update(specs\005-bcra-credit-check\checklists\requirements.md)
+  ⎿  Added 2 lines, removed 1 line
+      31  
+      32  ## Notes
+      33  
+      34 -- Quedan 2 marcadores [NEEDS CLARIFICATION]: separadores admiti
+         -dos frente al formato que acepta el alta (Edge Cases) y compati
+         -bilidad con el Principio IX de la constitución (FR-022).       
+      34 +- Los 2 marcadores [NEEDS CLARIFICATION] se resolvieron el 2026
+         +-10-26 (sección Clarifications de la spec): se admiten solo los
+         + formatos del alta (11 dígitos, con o sin guiones) y se consult
+         +a sin guiones; el Principio IX se enmienda con `/speckit-consti
+         +tution` antes de implementar.                                  
+      35 +- Pendiente fuera de la spec: la enmienda de la constitución es
+         + requisito previo de la implementación (FR-022).               
+      36  - Detalles que pueden parecer de implementación y se mantienen 
+          a propósito: la API del BCRA y su método "Deudas" son el objeto
+           de la feature, no una elección técnica; el algoritmo módulo 11
+           es la regla oficial del CUIT/CUIL (spec 003); el tiempo límite
+           de 10 s y la "interfaz de acceso" reflejan los Principios IV y
+           V de la constitución. Las specs 003 y 004 siguen la misma conv
+          ención.
+
+● La spec quedó actualizada con tus dos respuestas, y el checklist de calidad
+  ahora pasa completo.
+
+  - Spec: specs/005-bcra-credit-check/spec.md
+  - Checklist: checklists/requirements.md
+    (specs/005-bcra-credit-check/checklists/requirements.md)
+  - No hay hooks configurados, no creé una rama y no hice commit.
+
+  Q1 (formato del CUIT):
+  - El campo acepta solo lo mismo que el alta: 11 dígitos, con o sin guiones
+    (XX-XXXXXXXX-X).
+  - En el formulario el valor queda tal como se escribió.
+  - Espacios, puntos o guiones fuera de lugar se rechazan con el mensaje "El
+    CUIT/CUIL debe tener 11 dígitos, con o sin guiones (XX-XXXXXXXX-X)" y no se
+    consulta.
+  - Para consultar se quitan los guiones: tanto el front como nuestra API mandan
+    al BCRA los 11 dígitos sin guiones.
+
+  Q2 (Principio IX):
+  - La spec ahora depende de que se enmiende la constitución, y FR-022 dice que
+    no se implementa hasta que eso esté hecho.
+  - Dejé por escrito qué permite la enmienda: consultar fuentes públicas
+    oficiales mientras se usa la app.
+  - No permite guardar esos datos ni registrarlos en logs (tampoco el CUIT
+    consultado). Tampoco permite usarlos en tests, ejemplos o demos.
+
+  Próximo paso: correr /speckit-constitution para enmendar el Principio IX y
+  después /speckit-plan. Como el principio pasa a admitir una excepción,
+  propongo que la enmienda sea versión 2.3.0 (MINOR). Esto sigue la regla de la
+  constitución, que considera MINOR ampliar la guía sin quitar ningún principio.
+  Si te parece bien, la corro con este texto:
+
+  ▎ Se permite consultar en tiempo de uso fuentes públicas oficiales que
+  ▎ devuelven datos reales (p. ej. la Central de Deudores del BCRA). Esos datos
+  ▎ solo se muestran: no se guardan ni se registran en logs. Las pruebas, los
+  ▎ datos de ejemplo, los fixtures y las demos siguen siendo exclusivamente
+  ▎ ficticios y usan fuentes simuladas.
