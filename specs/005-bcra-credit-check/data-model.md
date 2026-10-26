@@ -87,8 +87,8 @@ Textos fijos (FR-020), definidos en un único lugar (`credit/service.py`):
 | `status` | `message` |
 |----------|-----------|
 | `no_data` | "El BCRA no registra deudas informadas para este CUIT/CUIL." |
-| `bcra_unavailable` | "No pudimos consultar la situación en el BCRA en este momento. Intentá de nuevo en unos minutos." |
-| `summary_unavailable` | "No pudimos preparar el resumen de la situación en el BCRA. Intentá de nuevo en unos minutos." |
+| `bcra_unavailable` | "No pudimos consultar la situación en el BCRA en este momento. Inténtalo de nuevo en unos minutos." |
+| `summary_unavailable` | "No pudimos preparar el resumen de la situación en el BCRA. Inténtalo de nuevo en unos minutos." |
 
 ### Flujo de estados del servicio
 

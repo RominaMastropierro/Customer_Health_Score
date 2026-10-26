@@ -30,11 +30,11 @@ Content-Type: application/json
 ```
 
 ```json
-{ "status": "bcra_unavailable", "tone": null, "message": "No pudimos consultar la situación en el BCRA en este momento. Intentá de nuevo en unos minutos." }
+{ "status": "bcra_unavailable", "tone": null, "message": "No pudimos consultar la situación en el BCRA en este momento. Inténtalo de nuevo en unos minutos." }
 ```
 
 ```json
-{ "status": "summary_unavailable", "tone": null, "message": "No pudimos preparar el resumen de la situación en el BCRA. Intentá de nuevo en unos minutos." }
+{ "status": "summary_unavailable", "tone": null, "message": "No pudimos preparar el resumen de la situación en el BCRA. Inténtalo de nuevo en unos minutos." }
 ```
 
 Los cuatro casos son 200 porque la consulta se resolvió; `status` dice qué mostrar (research R2).
