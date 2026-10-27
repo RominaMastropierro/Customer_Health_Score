@@ -4,7 +4,9 @@ from health_score.config import ConfigError, ScoringConfig, load_config
 from health_score.metrics import METRIC_RANGES, Metric
 from health_score.models import (
     Client,
+    ClientData,
     ClientMetrics,
+    ClientRecord,
     ClientScoreResult,
     FieldError,
     HealthLevel,
@@ -17,7 +19,9 @@ from health_score.scoring import classify, score_client, score_portfolio
 __all__ = [
     "METRIC_RANGES",
     "Client",
+    "ClientData",
     "ClientMetrics",
+    "ClientRecord",
     "ClientScoreResult",
     "ConfigError",
     "FieldError",

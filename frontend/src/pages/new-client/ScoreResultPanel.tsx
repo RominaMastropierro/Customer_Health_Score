@@ -1,3 +1,5 @@
+import { Loader2 } from "lucide-react"
+
 import type { ScoreResult } from "@/api/types"
 import LevelBadge from "@/components/LevelBadge"
 import ScoreRing from "@/components/ScoreRing"
@@ -10,10 +12,18 @@ export default function ScoreResultPanel({
   result,
   title,
   loading,
+  canSave = false,
+  saveHint,
+  saving = false,
+  onSave,
 }: {
   result: ScoreResult | null
   title: string
   loading: boolean
+  canSave?: boolean
+  saveHint?: string
+  saving?: boolean
+  onSave?: () => void
 }) {
   return (
     <Card aria-live="polite" className="h-fit gap-0 py-0">
@@ -35,9 +45,21 @@ export default function ScoreResultPanel({
             </p>
           </div>
           <SubScoreBars subScores={result.sub_scores} />
-          <Button variant="secondary" disabled className="h-auto flex-col gap-0 py-2">
-            Guardar en cartera
-            <span className="text-faint text-xs font-normal">Disponible próximamente</span>
+          <Button
+            variant="secondary"
+            disabled={!canSave || saving}
+            onClick={onSave}
+            className="h-auto flex-col gap-0 py-2"
+          >
+            {saving ? (
+              <span className="flex items-center gap-2">
+                <Loader2 className="animate-spin" aria-hidden="true" />
+                Guardando
+              </span>
+            ) : (
+              "Guardar en cartera"
+            )}
+            {!saving && saveHint && <span className="text-faint text-xs font-normal">{saveHint}</span>}
           </Button>
         </div>
       ) : (

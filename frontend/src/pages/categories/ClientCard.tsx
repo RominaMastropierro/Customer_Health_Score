@@ -1,7 +1,7 @@
 import { AlertTriangle } from "lucide-react"
 
 import type { ClientScoreResult } from "@/api/types"
-import { displayName, initials, weakestMetric } from "@/lib/display"
+import { CUIL_LABEL, displayName, formatCuil, initials, weakestMetric } from "@/lib/display"
 
 export default function ClientCard({ entry }: { entry: ClientScoreResult }) {
   const name = displayName(entry)
@@ -14,7 +14,13 @@ export default function ClientCard({ entry }: { entry: ClientScoreResult }) {
         </span>
         <div className="min-w-0 flex-1">
           <strong className="block truncate text-sm">{name}</strong>
-          <span className="text-muted-foreground text-xs">{entry.client_id}</span>
+          <span className="text-muted-foreground text-xs">
+            {entry.client_id} ·{" "}
+            <span className="font-mono">
+              <span className="sr-only">{CUIL_LABEL} </span>
+              {formatCuil(entry.cuil)}
+            </span>
+          </span>
         </div>
         <b className="text-xl">{entry.result ? entry.result.score : "—"}</b>
       </div>

@@ -19,7 +19,7 @@ Resultado esperado: la suite completa pasa, incluidos los tests nuevos de
 C3 `GET /metrics`).
 
 ```powershell
-uvicorn health_score.api.app:app --reload
+uvicorn health_score.api.app:app_from_env --factory --reload
 ```
 
 Verificación manual en `http://127.0.0.1:8000/docs`:

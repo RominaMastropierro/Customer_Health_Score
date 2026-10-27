@@ -10,6 +10,18 @@ export interface ClientMetrics {
   days_to_renewal: number
 }
 
+// Cuerpo de POST /clients y PUT /clients/{id}: sin client_id, que lo genera el servicio.
+export interface ClientData {
+  cuil: string
+  name: string | null
+  metrics: ClientMetrics
+}
+
+// El servicio devuelve el cuil normalizado, sin guiones.
+export interface ClientRecord extends ClientData {
+  client_id: string
+}
+
 export interface SubScores {
   usage: number
   support_tickets: number
@@ -32,6 +44,8 @@ export interface FieldError {
 
 export interface ClientScoreResult {
   client_id: string | null
+  // Solo en la cartera almacenada (spec 003); ausente o null en otras respuestas.
+  cuil?: string | null
   name: string | null
   metrics: Record<string, unknown> | null
   result: ScoreResult | null
@@ -59,5 +73,16 @@ export interface MetricRange {
   name: MetricName
   min: number
   max: number | null
+  message: string
+}
+
+// Consulta al BCRA (spec 005): el dashboard muestra `message` tal como llega.
+export type CreditStatusKind = "with_debts" | "no_data" | "bcra_unavailable" | "summary_unavailable"
+
+export type CreditTone = "positive" | "warning" | "risk"
+
+export interface CreditStatus {
+  status: CreditStatusKind
+  tone: CreditTone | null
   message: string
 }

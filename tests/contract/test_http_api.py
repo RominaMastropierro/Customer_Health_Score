@@ -5,6 +5,7 @@ from conftest import DEFAULT_CONFIG_DATA, merge
 from health_score import METRIC_RANGES, ConfigError
 from health_score.metrics import range_message
 from health_score.api.app import app_from_env, create_app
+from health_score.data import SqlClientRepository, init_schema, make_engine
 
 INTERMEDIATE = {"usage": 60, "support_tickets": 3, "nps": 7, "days_to_renewal": 90}
 
@@ -225,8 +226,9 @@ def test_unknown_client_returns_404(client):
 EXPECTED_ENDPOINTS = {
     ("/score", "post"): "ScoreResult",
     ("/portfolio/score", "post"): "PortfolioResult",
-    ("/portfolio", "get"): "PortfolioResult",
-    ("/clients/{client_id}/score", "get"): "ClientScoreResult",
+    # Spec 003: subclases con los mismos campos más `cuil` (FR-034, decisión 2026-10-19).
+    ("/portfolio", "get"): "StoredPortfolioResult",
+    ("/clients/{client_id}/score", "get"): "StoredClientScoreResult",
     ("/config", "get"): "ScoringConfig",
 }
 
@@ -291,3 +293,52 @@ def test_single_score_under_one_second(client):
     response = client.post("/score", json=INTERMEDIATE)
     assert response.status_code == 200
     assert time.perf_counter() - start < 1
+
+
+# --- OpenAPI de la spec 003 (FR-024) ---
+
+
+@pytest.fixture
+def store_openapi(default_config) -> dict:
+    engine = make_engine("sqlite://")
+    init_schema(engine)
+    app = create_app(default_config, SqlClientRepository(engine))
+    return TestClient(app).get("/openapi.json").json()
+
+
+@pytest.mark.parametrize(
+    ("path", "method", "codes"),
+    [
+        ("/clients", "post", {"201", "409", "422", "503"}),
+        ("/clients", "get", {"200", "503"}),
+        ("/clients/{client_id}", "get", {"200", "404", "503"}),
+        ("/clients/{client_id}", "put", {"200", "404", "409", "422", "503"}),
+        ("/clients/{client_id}", "delete", {"204", "404", "503"}),
+    ],
+)
+def test_openapi_declares_client_endpoints(store_openapi, path, method, codes):
+    operation = store_openapi["paths"][path][method]
+    assert codes <= set(operation["responses"])
+    assert operation.get("summary")
+    assert operation.get("description")
+
+
+def test_openapi_client_schemas(store_openapi):
+    schemas = store_openapi["components"]["schemas"]
+    assert "client_id" not in schemas["ClientData"]["properties"]
+    assert set(schemas["ClientRecord"]["properties"]) == {"client_id", "cuil", "name", "metrics"}
+    assert "cuil" in schemas["StoredClientScoreResult"]["properties"]
+
+
+# --- Consulta al BCRA (spec 005) ---
+
+
+def test_openapi_declares_credit_status(openapi):
+    operation = openapi["paths"]["/credit-status"]["post"]
+    schema = operation["responses"]["200"]["content"]["application/json"]["schema"]
+    assert schema["$ref"].endswith("/CreditStatus")
+    assert "422" in operation["responses"]
+    assert operation.get("summary")
+    assert operation.get("description")
+    properties = openapi["components"]["schemas"]["CreditStatus"]["properties"]
+    assert set(properties) == {"status", "tone", "message"}

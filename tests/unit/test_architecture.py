@@ -54,3 +54,14 @@ def test_no_config_values_hardcoded(path):
         and node.value in CONFIG_ONLY_VALUES
     ]
     assert not found
+
+
+def test_cuil_rule_has_no_io_imports():
+    tree = ast.parse((PACKAGE / "cuil.py").read_text(encoding="utf-8"))
+    offending = {
+        module
+        for module in imported_modules(tree)
+        for forbidden in FORBIDDEN_IN_CORE
+        if module == forbidden or module.startswith(forbidden + ".")
+    }
+    assert not offending

@@ -1,7 +1,16 @@
 import { describe, expect, it } from "vitest"
 
-import { ApiError, getClientScore, getPortfolio, postScore } from "@/api/client"
-import { portfolioFixture, stubFetch } from "@/test/fixtures"
+import {
+  ApiError,
+  createClient,
+  deleteClient,
+  getClientScore,
+  getPortfolio,
+  postScore,
+  updateClient,
+} from "@/api/client"
+import type { ClientData } from "@/api/types"
+import { clientRecordFixture, portfolioFixture, stubFetch } from "@/test/fixtures"
 
 async function caught(promise: Promise<unknown>): Promise<ApiError> {
   try {
@@ -69,5 +78,92 @@ describe("api client", () => {
     const { calls } = stubFetch({ "GET /api/clients/A%2FB/score": { status: 200, body: {} } })
     await getClientScore("A/B")
     expect(calls[0].key).toBe("GET /api/clients/A%2FB/score")
+  })
+})
+
+const DATA: ClientData = {
+  cuil: "20-90000024-4",
+  name: "Cliente Ficticio",
+  metrics: { usage: 60, support_tickets: 3, nps: 7, days_to_renewal: 90 },
+}
+
+const DUPLICATE = "El CUIL '20900000015' ya está registrado en otro cliente"
+
+describe("api client: clientes (spec 004)", () => {
+  it("crea un cliente sin enviar client_id y devuelve el registro", async () => {
+    const { calls } = stubFetch({ "POST /api/clients": { status: 201, body: clientRecordFixture } })
+    const record = await createClient({ ...DATA, client_id: "X" } as ClientData)
+    expect(record).toEqual(clientRecordFixture)
+    expect(calls[0].key).toBe("POST /api/clients")
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual(DATA)
+  })
+
+  it("actualiza por id codificado", async () => {
+    const { calls } = stubFetch({
+      "PUT /api/clients/C-002": { status: 200, body: clientRecordFixture },
+      "PUT /api/clients/a%2Fb": { status: 200, body: clientRecordFixture },
+    })
+    await updateClient("C-002", DATA)
+    await updateClient("a/b", DATA)
+    expect(calls.map((c) => c.key)).toEqual(["PUT /api/clients/C-002", "PUT /api/clients/a%2Fb"])
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual(DATA)
+  })
+
+  it("elimina y acepta un 204 sin cuerpo", async () => {
+    const { calls } = stubFetch({ "DELETE /api/clients/C-001": { status: 204 } })
+    await expect(deleteClient("C-001")).resolves.toBeUndefined()
+    expect(calls[0].key).toBe("DELETE /api/clients/C-001")
+  })
+
+  it("asocia los 422 de /clients a cada campo y deja el resto como error general", async () => {
+    stubFetch({
+      "POST /api/clients": {
+        status: 422,
+        body: {
+          detail: [
+            { loc: ["body", "metrics", "usage"], msg: "debe ser un entero entre 0 y 100", type: "x" },
+            { loc: ["body", "cuil"], msg: "el dígito verificador del CUIL no es válido", type: "x" },
+            { loc: ["body", "name"], msg: "nombre inválido", type: "x" },
+            { loc: ["body", "metrics"], msg: "campo obligatorio", type: "x" },
+            { loc: ["body", "client_id"], msg: "campo no permitido", type: "x" },
+          ],
+        },
+      },
+    })
+    const error = await caught(createClient(DATA))
+    expect(error.status).toBe(422)
+    expect(error.fieldErrors).toEqual({
+      usage: "debe ser un entero entre 0 y 100",
+      cuil: "el dígito verificador del CUIL no es válido",
+      name: "nombre inválido",
+    })
+    expect(error.formErrors).toEqual(["campo obligatorio", "campo no permitido"])
+  })
+
+  it("convierte el 409 de CUIL duplicado en error del campo cuil, al crear y al actualizar", async () => {
+    stubFetch({
+      "POST /api/clients": { status: 409, body: { detail: DUPLICATE } },
+      "PUT /api/clients/C-002": { status: 409, body: { detail: DUPLICATE } },
+    })
+    for (const promise of [createClient(DATA), updateClient("C-002", DATA)]) {
+      const error = await caught(promise)
+      expect(error.status).toBe(409)
+      expect(error.fieldErrors).toEqual({ cuil: DUPLICATE })
+    }
+  })
+
+  it("deja como error general un 409 que no es de CUIL", async () => {
+    const detail = "Ya existe un cliente con el identificador 'x'"
+    stubFetch({ "POST /api/clients": { status: 409, body: { detail } } })
+    const error = await caught(createClient(DATA))
+    expect(error.status).toBe(409)
+    expect(error.formErrors).toEqual([detail])
+    expect(error.fieldErrors).toBeUndefined()
+  })
+
+  it("informa el 404 al actualizar o eliminar", async () => {
+    stubFetch({})
+    expect((await caught(updateClient("C-999", DATA))).status).toBe(404)
+    expect((await caught(deleteClient("C-999"))).status).toBe(404)
   })
 })

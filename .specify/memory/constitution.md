@@ -1,17 +1,21 @@
 <!--
 Sync Impact Report
-- Cambio de versión: 2.0.0 → 2.1.0 (MINOR: ampliación sustancial de Restricciones Técnicas)
-- Principios modificados:
-  I. Simplicidad y Mantenibilidad (sin cambio de título): la preferencia por la biblioteca
-     estándar se acota al backend; en el frontend se prioriza el stack aprobado.
-- Secciones modificadas:
-  Restricciones Técnicas: se reorganiza en Backend y Frontend y se fija el stack del
-  frontend (Vite + React, Tailwind CSS, shadcn/ui, Recharts).
-- Motivo: definir el stack tecnológico del frontend del proyecto.
-- Secciones añadidas: ninguna (subsecciones Backend/Frontend dentro de Restricciones Técnicas)
+- Cambio de versión: 2.3.0 → 2.4.0 (MINOR: ampliación de la guía del Principio IX; permite
+  algo que antes estaba prohibido, así que no es una aclaración sin efecto semántico)
+- Principios modificados: IX. Privacidad de los Datos (NO NEGOCIABLE), mismo título:
+  - la obligación de usar versiones simuladas de las fuentes y del modelo se acota a las
+    pruebas automatizadas y las demostraciones (los fixtures y los datos de ejemplo siguen
+    siendo exclusivamente ficticios);
+  - se permite la revisión manual de un prompt enviando fixtures ficticios al modelo real,
+    solo a mano y documentada en el plan.
+- Secciones añadidas: ninguna
 - Secciones eliminadas: ninguna
-- Artefactos dependientes: los plan.md existentes que mencionen tecnologías de UI deben
-  revisarse para alinearse con el stack aprobado.
+- Motivo: specs/005-bcra-credit-check, FR-028 y SC-006 (la calidad del texto del prompt solo
+  se puede revisar con el modelo real) y el análisis de consistencia del 2026-10-26.
+- Artefactos dependientes: el plan de specs/005-bcra-credit-check debe documentar la revisión
+  del prompt en su Constitution Check, y su quickstart debe usar una demo totalmente simulada.
+  Plantillas (.specify/templates/*) revisadas: no requieren cambios, porque leen la
+  constitución al ejecutarse.
 - TODOs diferidos: ninguno
 -->
 
@@ -117,11 +121,29 @@ fuente.
 
 ### IX. Privacidad de los Datos (NO NEGOCIABLE)
 
-- Solo MUST utilizarse datos ficticios.
+- Solo MUST utilizarse datos ficticios, salvo la excepción de consulta en tiempo de uso
+  descripta abajo.
 - Está prohibido incorporar información real de clientes en el código, los datos de ejemplo,
   los tests, los fixtures, las demostraciones o el historial del repositorio.
+- **Excepción: consulta en tiempo de uso.** El sistema MAY consultar, a pedido de la persona
+  usuaria, fuentes públicas oficiales que devuelven datos reales (p. ej. la Central de
+  Deudores del BCRA) y MAY enviar esa respuesta a un proveedor de modelo de IA para redactar
+  un texto para esa persona, con estas condiciones:
+  - el proveedor del modelo MUST NOT usar los datos enviados para entrenar modelos, y su
+    elección MUST justificarse en el plan de la funcionalidad;
+  - los datos reales MUST solo mostrarse: MUST NOT guardarse en ningún almacenamiento ni
+    registrarse en logs (tampoco la identificación consultada, el prompt ni el texto
+    generado);
+  - las pruebas, los datos de ejemplo, los fixtures y las demostraciones MUST seguir siendo
+    exclusivamente ficticios; las pruebas automatizadas y las demostraciones MUST usar
+    versiones simuladas de esas fuentes y del modelo;
+  - la revisión manual de un prompt MAY enviar fixtures ficticios al modelo real, porque no
+    contiene datos reales: se ejecuta solo a mano, nunca en la suite de pruebas, y el plan
+    de la funcionalidad MUST documentarla.
 
-**Justificación**: elimina el riesgo de exponer información sensible de clientes reales.
+**Justificación**: elimina el riesgo de exponer información sensible de clientes reales. La
+excepción permite el valor de consultar fuentes oficiales al momento del alta sin que ningún
+dato real quede en el sistema ni en el repositorio.
 
 ### X. Desarrollo Incremental y Demostrable
 
@@ -156,6 +178,32 @@ permiten mostrar valor en cada iteración.
 - El frontend MUST consumir datos y resultados del scoring exclusivamente a través de la API
   (Principio II); MUST NOT reimplementar ni duplicar lógica de scoring.
 
+### Contenedores y despliegue
+
+- La ejecución en contenedores MUST seguir el OWASP Docker Security Cheat Sheet. Como
+  mínimo:
+  - imágenes base fijadas por tag **y** digest, nunca `latest`, y renovadas periódicamente;
+  - builds multi-stage: compiladores y herramientas de build MUST NOT llegar a la imagen
+    final;
+  - usuario no-root con UID/GID numérico fijo, igual en el Dockerfile y en compose;
+  - `cap_drop: [ALL]` (solo se agregan capabilities demostradamente necesarias) y
+    `no-new-privileges:true`;
+  - sistema de archivos raíz de solo lectura, con `tmpfs` para temporales; solo los
+    volúmenes de datos (p. ej. la base SQLite) son escribibles y el resto se monta `:ro`;
+  - límites de memoria, CPU, procesos y archivos abiertos, y reinicio acotado;
+  - redes dedicadas, con las de backend marcadas como internas y solo los puertos
+    imprescindibles publicados;
+  - secretos mediante Docker secrets o montajes secretos de BuildKit; MUST NOT incluirse en
+    `ENV`, `ARG` ni en la imagen;
+  - logs a stdout/stderr con rotación.
+- Está prohibido montar `/var/run/docker.sock`, usar `privileged: true`,
+  `network_mode: host` o perfiles seccomp/AppArmor `unconfined`.
+- Toda excepción a estas reglas MUST documentarse junto al control afectado y en el plan,
+  con su justificación.
+
+**Justificación**: un contenedor endurecido por defecto limita el impacto de una
+vulnerabilidad en la aplicación o en sus dependencias.
+
 ### Otras tecnologías
 
 - Cualquier tecnología adicional (otras bibliotecas de UI o de gráficos, bases de datos,
@@ -174,7 +222,11 @@ permiten mostrar valor en cada iteración.
   - no hay pesos ni umbrales hardcodeados fuera del JSON de configuración;
   - los endpoints nuevos o modificados aparecen correctamente en OpenAPI;
   - no se introdujeron datos reales de clientes;
-  - toda dependencia nueva está justificada en el plan.
+  - toda dependencia nueva está justificada en el plan;
+  - los cambios en `Dockerfile` o `compose.yaml` se revisaron contra el checklist OWASP y
+    `hadolint` no reporta errores.
+- Antes de publicar una imagen MUST escanearse (Trivy o Grype) y no presentar
+  vulnerabilidades HIGH o CRITICAL sin una justificación documentada.
 
 ## Governance
 
@@ -191,4 +243,4 @@ permiten mostrar valor en cada iteración.
 - **Cumplimiento**: cada plan y cada revisión de cambios MUST verificar el cumplimiento de esta
   constitución. Toda complejidad adicional MUST justificarse explícitamente.
 
-**Version**: 2.1.0 | **Ratified**: 2026-10-10 | **Last Amended**: 2026-10-11
+**Version**: 2.4.0 | **Ratified**: 2026-10-10 | **Last Amended**: 2026-10-26

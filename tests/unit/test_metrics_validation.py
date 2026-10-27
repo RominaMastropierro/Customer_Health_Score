@@ -2,6 +2,8 @@ import pytest
 from pydantic import ValidationError
 
 from health_score import METRIC_RANGES, ClientMetrics, Metric
+from health_score.metrics import range_message
+from health_score.models import validation_message
 
 VALID = {"usage": 60, "support_tickets": 3, "nps": 7, "days_to_renewal": 90}
 
@@ -72,3 +74,21 @@ def test_is_immutable():
     metrics = ClientMetrics.model_validate(VALID)
     with pytest.raises(ValidationError):
         metrics.usage = 1
+
+
+# --- Mensajes de cuerpos anidados (spec 003, POST/PUT /clients) ---
+
+
+@pytest.mark.parametrize("metric", list(Metric))
+def test_nested_metric_errors_use_range_message(metric):
+    loc = ("body", "metrics", metric.value)
+    assert validation_message(loc, "less_than_equal", "Input should be...") == range_message(metric)
+
+
+def test_nested_structure_errors_keep_priority():
+    assert validation_message(("body", "metrics", "nps"), "missing", "x") == "campo obligatorio"
+
+
+def test_other_nested_errors_pass_through():
+    assert validation_message(("body", "cuil"), "cuil_format", "mensaje") == "mensaje"
+    assert validation_message(("body", "metrics", "otro"), "int_type", "mensaje") == "mensaje"

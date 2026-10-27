@@ -1,0 +1,8 @@
+{
+  "20900000244": {"fixture": "situacion-2.json", "summary": "ok"},
+  "20900000023": {"fixture": "situacion-1.json", "summary": "ok"},
+  "20900000031": {"fixture": "situacion-5.json", "summary": "ok"},
+  "20900000074": {"fixture": "sin-situacion-valida.json", "summary": "ok"},
+  "20900000058": {"fixture": "estructura-invalida.json", "summary": "ok"},
+  "20900000066": {"fixture": "situacion-3.json", "summary": "fail"}
+}

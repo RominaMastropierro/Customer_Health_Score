@@ -8,6 +8,8 @@
 
 **Input**: User description: "Motor de scoring para una cartera de clientes. Recibe uso (%), tickets de soporte (30 días), NPS (0-10) y días hasta renovación. Devuelve un score de 0 a 100 y un nivel (Top, Estable, En riesgo). Pesos y umbrales configurables. Debe poder usarse desde cualquier interfaz."
 
+**Actualizado por**: [003-client-persistence-crud](../003-client-persistence-crud/spec.md) (2026-10-19): cada cliente persistido tiene un CUIL (CUIT/CUIL) único; los resultados de clientes persistidos lo incluyen de forma aditiva. El CUIL no es una entrada del motor y no modifica el cálculo (FR-018 a FR-020).
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Calcular el score y nivel de un cliente (Priority: P1)
@@ -84,6 +86,8 @@ Cualquier interfaz (una pantalla web, un servicio consumido por otro sistema, un
 - Score que cae exactamente en un umbral: se asigna al nivel superior (p. ej., score igual al umbral de Top → "Top").
 - Configuración ausente o ilegible: el motor no calcula y devuelve un error explícito; no usa valores implícitos.
 - Un peso configurado en cero: válido; esa métrica simplemente no influye en el score.
+- Evaluación de métricas sueltas (sin cliente persistido): el resultado no tiene CUIL (campo nulo o ausente); el score y el nivel no cambian por ello.
+- Dos clientes persistidos con las mismas métricas y distinto CUIL: obtienen exactamente el mismo score, nivel y sub-scores.
 
 ## Requirements *(mandatory)*
 
@@ -112,18 +116,24 @@ Cualquier interfaz (una pantalla web, un servicio consumido por otro sistema, un
 
 **Cartera e interfaces**
 
-- **FR-013**: El sistema MUST permitir evaluar una cartera de clientes en una sola solicitud, devolviendo un resultado por cliente (identificado por su identificador) y un conteo de clientes por nivel.
+- **FR-013**: El sistema MUST permitir evaluar una cartera de clientes en una sola solicitud, devolviendo un resultado por cliente (identificado por su identificador y, si es un cliente persistido, acompañado de su CUIL según FR-019) y un conteo de clientes por nivel.
 - **FR-014**: En la evaluación de una cartera, un cliente con datos inválidos MUST NOT impedir la evaluación de los demás; su resultado MUST indicar el error correspondiente.
 - **FR-015**: El motor MUST ser utilizable de forma independiente de cualquier interfaz de usuario, almacenamiento o fuente de datos, de modo que cualquier interfaz obtenga resultados idénticos para las mismas entradas.
 - **FR-016**: El sistema MUST exponer el motor a través de una interfaz de servicio documentada (entradas, salidas y errores) para que otros sistemas puedan consumirlo.
-- **FR-017**: Todos los datos de ejemplo, de prueba y de demostración MUST ser ficticios.
+- **FR-017**: Todos los datos de ejemplo, de prueba y de demostración MUST ser ficticios, incluidos los CUIL, que son sintéticos y se generan con la regla determinista de la spec 003 (FR-033 de 003).
+
+**CUIL (incorporado por la spec 003)**
+
+- **FR-018**: El CUIL MUST NOT ser una entrada del motor de scoring: el score, el nivel y los sub-scores dependen solo de las cuatro métricas y de la configuración (FR-008). La lógica de scoring y la configuración no cambian.
+- **FR-019**: Los resultados de evaluación de clientes persistidos (cartera almacenada y score de un cliente por identificador) MUST incluir el campo `cuil` (texto de 11 dígitos, sin guiones), de forma aditiva: los campos existentes no cambian y los consumidores que lo ignoran siguen funcionando. En los resultados que no corresponden a un cliente persistido (evaluación de métricas sueltas o de una cartera enviada en la solicitud) el campo está ausente: esas respuestas conservan exactamente su forma anterior.
+- **FR-020**: Las solicitudes de evaluación de métricas sueltas y de una cartera enviada en la solicitud MUST conservar su contrato de entrada actual: no piden ni aceptan CUIL. El formato, el dígito verificador y la unicidad del CUIL se validan solo en el CRUD de clientes de la spec 003, en un único lugar del sistema (Principio VI).
 
 ### Key Entities
 
-- **Cliente**: cliente de la cartera a evaluar. Atributos: identificador, nombre (ficticio) y sus métricas de salud.
+- **Cliente**: cliente de la cartera a evaluar. Atributos: identificador, CUIL (CUIT/CUIL; texto de 11 dígitos, único y ficticio, definido en la spec 003; solo en clientes persistidos), nombre (ficticio) y sus métricas de salud. El CUIL identifica al cliente pero no interviene en el cálculo.
 - **Métricas de salud**: las cuatro mediciones de un cliente en un momento dado: uso (%), tickets de soporte (30 días), NPS y días hasta renovación.
 - **Configuración de scoring**: pesos por métrica, umbrales de nivel (Top y En riesgo), tope de tickets y horizonte de renovación.
-- **Resultado de evaluación**: score (0–100), nivel (Top / Estable / En riesgo) y sub-score por métrica de un cliente; o bien el error de validación correspondiente.
+- **Resultado de evaluación**: score (0–100), nivel (Top / Estable / En riesgo) y sub-score por métrica de un cliente; o bien el error de validación correspondiente. Si el cliente está persistido, incluye además su CUIL (FR-019).
 - **Resumen de cartera**: conjunto de resultados de evaluación más la cantidad de clientes por nivel.
 
 ## Success Criteria *(mandatory)*
@@ -136,6 +146,7 @@ Cualquier interfaz (una pantalla web, un servicio consumido por otro sistema, un
 - **SC-004**: Un cambio de pesos o umbrales se aplica en menos de 5 minutos, sin intervención de desarrollo y sin modificar la lógica del motor.
 - **SC-005**: El mismo cliente evaluado desde dos interfaces distintas obtiene resultados idénticos en el 100 % de los casos.
 - **SC-006**: El 100 % de las configuraciones inválidas se rechaza con un mensaje que permite identificar el valor a corregir.
+- **SC-007**: Para las mismas métricas y configuración, el score, el nivel y los sub-scores son idénticos con o sin CUIL en el 100 % de los casos, y el 100 % de los resultados de clientes persistidos incluye su CUIL.
 
 ## Assumptions
 
@@ -145,5 +156,6 @@ Cualquier interfaz (una pantalla web, un servicio consumido por otro sistema, un
 - El uso se recibe como porcentaje entero de 0 a 100.
 - Una renovación vencida (días negativos) queda fuera del alcance de esta versión y se rechaza como entrada inválida.
 - El motor no persiste resultados ni historial; cada evaluación es independiente. El seguimiento histórico queda fuera de alcance.
-- Los datos de clientes provienen de una fuente local con datos ficticios; integraciones con fuentes externas quedan para funcionalidades futuras.
+- Los datos de clientes provienen de una fuente local con datos ficticios; integraciones con fuentes externas quedan para funcionalidades futuras. Desde la spec 003, esa fuente es un almacenamiento persistente con CRUD, y cada cliente tiene un CUIL ficticio único.
+- El motor no valida ni consulta el CUIL; su formato, dígito verificador y unicidad son responsabilidad del CRUD de clientes (spec 003).
 - Solo existe una configuración activa a la vez; no se contemplan configuraciones distintas por segmento de cliente.

@@ -1,0 +1,15 @@
+# Lint del Dockerfile  [#11]
+failure-threshold: warning
+trustedRegistries:
+  - docker.io
+  - gcr.io
+  - ghcr.io
+  - quay.io
+override:
+  error:
+    - DL3002   # el último USER no debe ser root
+    - DL3006   # siempre indicar versión de la imagen
+    - DL3007   # no usar latest
+    - DL3020   # usar COPY en lugar de ADD para archivos/carpetas
+    - DL3025   # usar notación JSON en CMD/ENTRYPOINT
+    - DL4006   # definir pipefail antes de usar pipes en RUN

@@ -1,0 +1,10 @@
+# Override de demostración (spec 005). Nunca se usa en producción.
+#   docker compose -f compose.yaml -f compose.demo.yaml up -d --build
+# La API simula el BCRA y el modelo con los fixtures ficticios de tests/fixtures: no sale a
+# internet ni usa la API key (constitución v2.4.0, Principio IX). Datos solo ficticios.
+services:
+  api:
+    environment:
+      HEALTH_SCORE_DEMO_FIXTURES: /app/demo-fixtures
+    volumes:
+      - ./tests/fixtures:/app/demo-fixtures:ro    # [#8] solo lectura

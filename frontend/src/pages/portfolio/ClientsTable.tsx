@@ -23,7 +23,17 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { DISPLAY_GROUPS, METRIC_VIEWS, displayName, formatMetric, groupOf, type DisplayGroup } from "@/lib/display"
+import {
+  CUIL_LABEL,
+  DISPLAY_GROUPS,
+  METRIC_VIEWS,
+  displayName,
+  formatCuil,
+  formatMetric,
+  groupOf,
+  matchesCuil,
+  type DisplayGroup,
+} from "@/lib/display"
 
 export type GroupFilter = DisplayGroup | "Todas"
 
@@ -51,7 +61,8 @@ export default function ClientsTable({
     const filtered = results.filter(
       (entry) =>
         (state.group === "Todas" || groupOf(entry) === state.group) &&
-        `${entry.client_id ?? ""} ${entry.name ?? ""}`.toLowerCase().includes(needle),
+        (`${entry.client_id ?? ""} ${entry.name ?? ""}`.toLowerCase().includes(needle) ||
+          matchesCuil(entry.cuil, query)),
     )
     // Los inválidos no tienen score: siempre al final, en el orden que tenían.
     return filtered.sort((a, b) => {
@@ -80,6 +91,7 @@ export default function ClientsTable({
               value={state.query}
               onChange={(e) => onStateChange({ ...state, query: e.target.value })}
               placeholder="Buscar cliente"
+              title={`Buscar por nombre, ID o ${CUIL_LABEL}`}
               className="pl-9 sm:w-56"
             />
           </label>
@@ -121,6 +133,7 @@ export default function ClientsTable({
           <TableHeader>
             <TableRow className="hover:bg-transparent">
               <TableHead className="pl-5">Cliente</TableHead>
+              <TableHead>{CUIL_LABEL}</TableHead>
               <TableHead>Score</TableHead>
               <TableHead>Estado</TableHead>
               {METRIC_VIEWS.map((view) => (
@@ -148,6 +161,9 @@ export default function ClientsTable({
                   <TableCell className="pl-5">
                     <strong className="block">{displayName(entry)}</strong>
                     <span className="text-muted-foreground text-xs">{id ?? "sin id"}</span>
+                  </TableCell>
+                  <TableCell className="font-mono text-sm whitespace-nowrap">
+                    {formatCuil(entry.cuil)}
                   </TableCell>
                   <TableCell>
                     <b className="text-base">{entry.result ? entry.result.score : "—"}</b>

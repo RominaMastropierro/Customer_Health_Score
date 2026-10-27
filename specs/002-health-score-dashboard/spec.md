@@ -10,13 +10,15 @@
 
 **Depende de**: [001-customer-health-scoring](../001-customer-health-scoring/spec.md) (motor de scoring y su interfaz de servicio).
 
+**Actualizado por**: [003-client-persistence-crud](../003-client-persistence-crud/spec.md) (2026-10-19): el servicio devuelve el CUIL (CUIT/CUIL) de cada cliente persistido, y el dashboard lo muestra con guiones en la tabla, las tarjetas y el detalle, y permite buscar por él (FR-027 a FR-031). La pantalla "Nuevo cliente" no cambia.
+
 **Referencia visual**: `docs/front_desing_assets/B2B SaaS Dashboard Design` (prototipo con datos simulados). El prototipo define la estructura, la navegación, los estados y el estilo visual; los datos, reglas y resultados provienen exclusivamente de la interfaz de servicio de la spec 001.
 
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Ver la salud de toda la cartera (Priority: P1)
 
-Una persona de Customer Success abre la aplicación y ve, en la pantalla "Cartera", un resumen de la cartera almacenada: total de clientes, cantidad y porcentaje por nivel (Top, Estable, En riesgo) y cantidad de registros inválidos, un gráfico de distribución por nivel y una tabla con todos los clientes (nombre, identificador, score, nivel). Puede buscar por nombre o identificador, filtrar por nivel y ordenar por score para decidir a quién contactar primero.
+Una persona de Customer Success abre la aplicación y ve, en la pantalla "Cartera", un resumen de la cartera almacenada: total de clientes, cantidad y porcentaje por nivel (Top, Estable, En riesgo) y cantidad de registros inválidos, un gráfico de distribución por nivel y una tabla con todos los clientes (nombre, identificador, CUIL, score, nivel). Puede buscar por nombre, identificador o CUIL, filtrar por nivel y ordenar por score para decidir a quién contactar primero.
 
 **Why this priority**: es la pantalla de inicio y la que entrega el valor operativo principal (priorizar cuentas). Por sí sola ya es un MVP útil.
 
@@ -25,11 +27,12 @@ Una persona de Customer Success abre la aplicación y ve, en la pantalla "Carter
 **Acceptance Scenarios**:
 
 1. **Given** una cartera almacenada de N clientes, **When** se abre la pantalla Cartera, **Then** se muestra el total N, el conteo por nivel y el de inválidos tal como los informa el servicio, y la suma de los conteos es igual a N.
-2. **Given** la pantalla Cartera cargada, **When** se escribe parte del nombre o del identificador en el buscador, **Then** la tabla muestra solo los clientes que coinciden y el contador de resultados se actualiza.
+2. **Given** la pantalla Cartera cargada, **When** se escribe parte del nombre, del identificador o del CUIL (con o sin guiones) en el buscador, **Then** la tabla muestra solo los clientes que coinciden y el contador de resultados se actualiza.
 3. **Given** la pantalla Cartera cargada, **When** se filtra por "En riesgo" y se ordena por score ascendente, **Then** la tabla muestra solo clientes En riesgo, del score más bajo al más alto.
 4. **Given** un cliente con datos inválidos en la cartera, **When** se muestra la tabla, **Then** aparece con la marca "Inválido", sin score (se muestra "—"), y al consultar su marca se ven los mensajes de error que devolvió el servicio.
 5. **Given** que el servicio no responde o devuelve un error, **When** se abre la pantalla, **Then** se muestra un estado de error con la opción "Reintentar", sin datos parciales ni inventados.
 6. **Given** una cartera vacía, **When** se abre la pantalla, **Then** se muestra un estado vacío con conteos en cero, sin error.
+7. **Given** la cartera cargada, **When** se muestra la tabla, **Then** cada cliente muestra su CUIL en una columna propia con el formato `XX-XXXXXXXX-X` (p. ej. `20-90000001-5`).
 
 ---
 
@@ -48,12 +51,13 @@ Una persona de Customer Success abre la pantalla "Nuevo cliente", ingresa las cu
 3. **Given** un cálculo en curso, **When** se espera la respuesta, **Then** el botón queda deshabilitado y se muestra un indicador de "Calculando" hasta recibir el resultado o el error.
 4. **Given** un nombre opcional ingresado, **When** se muestra el resultado, **Then** el resultado se titula con ese nombre; el nombre no modifica el cálculo.
 5. **Given** que no se calculó nada aún, **When** se abre la pantalla, **Then** el panel de resultado muestra un estado inicial que invita a completar los datos.
+6. **Given** un resultado calculado en "Nuevo cliente", **When** se muestra, **Then** no se pide ni se muestra ningún CUIL (el cliente no está persistido), ni aparece un espacio vacío con etiqueta.
 
 ---
 
 ### User Story 3 - Ver el detalle de un cliente de la cartera (Priority: P2)
 
-Desde la tabla de la cartera, la persona selecciona un cliente (clic o tecla Enter) y se abre un panel lateral de detalle con nombre, identificador, nivel, score en indicador circular, el desglose de sub-scores y, si el registro es inválido, la lista de errores por campo.
+Desde la tabla de la cartera, la persona selecciona un cliente (clic o tecla Enter) y se abre un panel lateral de detalle con nombre, identificador, CUIL, nivel, score en indicador circular, el desglose de sub-scores y, si el registro es inválido, la lista de errores por campo.
 
 **Why this priority**: explica *por qué* un cliente tiene su nivel (sub-scores), lo que permite actuar; depende de la US1.
 
@@ -61,7 +65,7 @@ Desde la tabla de la cartera, la persona selecciona un cliente (clic o tecla Ent
 
 **Acceptance Scenarios**:
 
-1. **Given** la tabla de la cartera, **When** se selecciona un cliente válido, **Then** el panel muestra su score, nivel y los cuatro sub-scores según el servicio.
+1. **Given** la tabla de la cartera, **When** se selecciona un cliente válido, **Then** el panel muestra su score, nivel y los cuatro sub-scores según el servicio, y el encabezado muestra su CUIL con guiones junto al identificador.
 2. **Given** un cliente inválido, **When** se abre su detalle, **Then** no se muestra score y se listan los errores por campo.
 3. **Given** que el servicio responde que el cliente no existe, **When** se abre el detalle, **Then** se muestra "Cliente no encontrado" y un botón para volver a la cartera.
 4. **Given** el panel abierto, **When** se pulsa cerrar, se pulsa Escape o se hace clic fuera del panel, **Then** el panel se cierra y la cartera conserva búsqueda, filtro y orden.
@@ -70,7 +74,7 @@ Desde la tabla de la cartera, la persona selecciona un cliente (clic o tecla Ent
 
 ### User Story 4 - Ver clientes agrupados por categoría (Priority: P2)
 
-En la pantalla "Por categoría", la persona ve una columna por nivel (Top, Estable, En riesgo) más una columna "Inválido", cada una con su cantidad y porcentaje y tarjetas de cliente que indican nombre, identificador, score y su métrica más débil (el sub-score más bajo). Cada columna puede colapsarse o expandirse.
+En la pantalla "Por categoría", la persona ve una columna por nivel (Top, Estable, En riesgo) más una columna "Inválido", cada una con su cantidad y porcentaje y tarjetas de cliente que indican nombre, identificador, CUIL, score y su métrica más débil (el sub-score más bajo). Cada columna puede colapsarse o expandirse.
 
 **Why this priority**: facilita repartir el trabajo del equipo por nivel; reutiliza los datos de la US1.
 
@@ -81,6 +85,7 @@ En la pantalla "Por categoría", la persona ve una columna por nivel (Top, Estab
 1. **Given** la cartera cargada, **When** se abre "Por categoría", **Then** cada cliente aparece exactamente en una columna y los conteos coinciden con el resumen de la pantalla Cartera.
 2. **Given** una columna sin clientes, **When** se muestra, **Then** indica "Sin clientes en esta categoría".
 3. **Given** una tarjeta de cliente inválido, **When** se muestra, **Then** indica la cantidad de errores de validación en lugar de la métrica más débil.
+4. **Given** la cartera cargada, **When** se muestran las tarjetas, **Then** cada una muestra el CUIL con guiones junto al identificador.
 
 ---
 
@@ -109,7 +114,10 @@ La persona puede ver, en modo solo lectura, la configuración de scoring vigente
 - Un cliente con varios errores de validación: se muestran todos, cada uno con su campo y mensaje.
 - Campo de métrica vacío o con texto en "Nuevo cliente": el envío se bloquea o el error del servicio se muestra en ese campo; nunca se envía un valor inventado.
 - Cambio de pantalla mientras hay una solicitud en curso: el resultado tardío no debe aparecer en otra pantalla.
-- Pantallas angostas (móvil): la navegación pasa a una barra inferior y la tabla se puede desplazar horizontalmente sin romper el diseño.
+- Pantallas angostas (móvil): la navegación pasa a una barra inferior y la tabla se puede desplazar horizontalmente sin romper el diseño. El CUIL se muestra completo, sin truncarse (13 caracteres con guiones).
+- Un cliente cuyo CUIL no llega en la respuesta (ausente o nulo, p. ej. un servicio anterior a la spec 003): se muestra "—" y la pantalla sigue funcionando.
+- Un CUIL recibido que no tiene exactamente 11 dígitos (dato inesperado): se muestra tal cual llegó, sin formatear ni fallar.
+- Búsqueda por CUIL con guiones (`20-90000001-5`), sin guiones (`20900000015`) o parcial (`9000000`): coincide con el mismo cliente en los tres casos.
 
 ## Requirements *(mandatory)*
 
@@ -131,7 +139,7 @@ La persona puede ver, en modo solo lectura, la configuración de scoring vigente
 
 - **FR-007**: La pantalla Cartera MUST mostrar indicadores de total de clientes, cantidad y porcentaje por nivel y cantidad de inválidos, tomados del resumen de cartera del servicio.
 - **FR-008**: La pantalla Cartera MUST mostrar un gráfico de distribución de clientes por nivel (incluyendo inválidos) con leyenda de cantidad y porcentaje.
-- **FR-009**: La tabla de clientes MUST mostrar por fila: nombre (o identificador si no tiene nombre), identificador, score (o "—" si es inválido) y nivel con distintivo de color; y MUST permitir búsqueda por nombre o identificador, filtro por nivel (incluido "Inválido") y orden ascendente/descendente por score.
+- **FR-009**: La tabla de clientes MUST mostrar por fila: nombre (o identificador si no tiene nombre), identificador, CUIL (columna propia, según FR-027), score (o "—" si es inválido) y nivel con distintivo de color; y MUST permitir búsqueda por nombre, identificador o CUIL (FR-029), filtro por nivel (incluido "Inválido") y orden ascendente/descendente por score.
 - **FR-010**: Las filas de clientes inválidos MUST permitir consultar sus mensajes de error.
 - **FR-011**: Cada fila MUST poder seleccionarse con el mouse o el teclado para abrir el detalle del cliente.
 - **FR-012**: La tabla y el panel de detalle MUST mostrar también las métricas originales del cliente (uso, tickets, NPS, días hasta renovación), incluidos los valores tal como fueron recibidos en los registros inválidos (p. ej., uso 120). Para esto, la interfaz de servicio de la spec 001 MUST ampliarse para devolver las métricas originales junto a cada resultado de cliente de la cartera almacenada y del detalle; esta ampliación MUST ser aditiva (no cambia score, nivel, sub-scores ni errores) y MUST reflejarse en el contrato y los tests de la spec 001.
@@ -139,25 +147,33 @@ La persona puede ver, en modo solo lectura, la configuración de scoring vigente
 **Nuevo cliente (US2)**
 
 - **FR-013**: La pantalla Nuevo cliente MUST ofrecer: un nombre opcional (solo para titular el resultado), uso con control deslizante 0–100 %, tickets de soporte y días hasta renovación como números enteros, y NPS con un selector de 0 a 10.
-- **FR-014**: Al calcular, la pantalla MUST enviar solo las cuatro métricas al servicio y mostrar score, nivel y los cuatro sub-scores devueltos.
+- **FR-014**: Al calcular, la pantalla MUST enviar solo las cuatro métricas al servicio y mostrar score, nivel y los cuatro sub-scores devueltos. La pantalla no pide ni muestra CUIL.
 - **FR-015**: Los errores de validación devueltos por el servicio MUST mostrarse junto al campo afectado, con un mensaje en español comprensible para personas no técnicas.
 - **FR-016**: Mientras se calcula, la acción MUST deshabilitarse y mostrar un indicador de progreso.
 - **FR-017**: El resultado calculado MUST NOT guardarse en la cartera; la pantalla MUST indicar que los datos no se guardan.
 
 **Detalle de cliente (US3)**
 
-- **FR-018**: El panel de detalle MUST obtener los datos del servicio de evaluación de un cliente de la cartera y mostrar nombre, identificador, nivel, score y sub-scores; o, si es inválido, la lista de errores por campo.
+- **FR-018**: El panel de detalle MUST obtener los datos del servicio de evaluación de un cliente de la cartera y mostrar nombre, identificador, CUIL (en el encabezado, junto al identificador), nivel, score y sub-scores; o, si es inválido, la lista de errores por campo.
 - **FR-019**: Si el servicio indica que el cliente no existe, el panel MUST mostrar "Cliente no encontrado" con una acción para volver.
 - **FR-020**: El panel MUST cerrarse con botón, tecla Escape o clic fuera de él, conservando el estado de búsqueda, filtro y orden de la cartera.
 
 **Por categoría (US4)**
 
 - **FR-021**: La pantalla MUST mostrar una columna por nivel más una columna "Inválido", cada una con cantidad, porcentaje sobre el total y tarjetas de cliente; las columnas MUST poder colapsarse y expandirse.
-- **FR-022**: Cada tarjeta de cliente válido MUST indicar su métrica más débil (la de menor sub-score según el servicio); las de clientes inválidos MUST indicar la cantidad de errores.
+- **FR-022**: Cada tarjeta de cliente válido MUST indicar su métrica más débil (la de menor sub-score según el servicio); las de clientes inválidos MUST indicar la cantidad de errores. Todas las tarjetas MUST mostrar el CUIL junto al identificador.
 
 **Configuración (US5)**
 
 - **FR-023**: La aplicación MUST mostrar en modo solo lectura la configuración activa devuelta por el servicio: pesos (como porcentaje del total), umbrales de Top y En riesgo, tope de tickets y horizonte de renovación.
+
+**CUIL (incorporado por la spec 003)**
+
+- **FR-027**: El dashboard MUST mostrar el CUIL de cada cliente persistido en la tabla de la cartera (columna propia), en las tarjetas de "Por categoría" y en el encabezado del detalle, tal como lo devuelve el servicio (FR-034 de la spec 003).
+- **FR-028**: El CUIL MUST presentarse con guiones en las posiciones canónicas (`XX-XXXXXXXX-X`) a partir de los 11 dígitos recibidos. Este formateo MUST definirse en un único lugar del frontend y reutilizarse en todas las pantallas; es solo de presentación: no modifica el dato recibido ni se envía al servicio. Si el valor no tiene 11 dígitos se muestra tal cual; si es nulo o ausente se muestra "—" (o no se muestra, en resultados sin cliente persistido).
+- **FR-029**: El buscador de la tabla MUST filtrar también por CUIL, con o sin guiones y por coincidencia parcial, sin perder la búsqueda por nombre e identificador.
+- **FR-030**: El dashboard MUST seguir funcionando con respuestas sin `cuil` (compatibilidad hacia atrás). El identificador sigue siendo la clave de navegación y de las rutas; el CUIL no reemplaza al identificador en ninguna solicitud.
+- **FR-031**: El CUIL MUST NOT validarse ni calcularse en la pantalla (dígito verificador, unicidad): esas reglas son del servicio (spec 003), coherente con FR-004.
 
 **Estados y accesibilidad**
 
@@ -168,8 +184,9 @@ La persona puede ver, en modo solo lectura, la configuración de scoring vigente
 ### Key Entities
 
 - **Vista de cartera**: resumen (total, conteo por nivel, inválidos) y lista de resultados por cliente, tal como los entrega el servicio de evaluación de cartera.
-- **Resultado de cliente**: identificador, nombre opcional, métricas originales tal como se recibieron y, o bien score + nivel + sub-scores, o bien lista de errores por campo.
-- **Formulario de evaluación**: las cuatro métricas ingresadas manualmente más un nombre opcional que solo se usa para titular el resultado.
+- **Resultado de cliente**: identificador, CUIL (opcional y anulable: solo en clientes persistidos), nombre opcional, métricas originales tal como se recibieron y, o bien score + nivel + sub-scores, o bien lista de errores por campo.
+- **Presentación del CUIL**: forma con guiones (`XX-XXXXXXXX-X`) derivada de los 11 dígitos recibidos; no se almacena ni se envía al servicio.
+- **Formulario de evaluación**: las cuatro métricas ingresadas manualmente más un nombre opcional que solo se usa para titular el resultado. No incluye CUIL.
 - **Configuración visible**: pesos, umbrales, tope de tickets y horizonte de renovación vigentes, en solo lectura.
 - **Grupo de visualización**: Top, Estable, En riesgo e Inválido. "Inválido" es una agrupación de la interfaz para registros con errores, no un nivel del motor.
 
@@ -184,6 +201,7 @@ La persona puede ver, en modo solo lectura, la configuración de scoring vigente
 - **SC-005**: El 100 % de los errores de validación devueltos por el servicio se muestran asociados al campo correcto.
 - **SC-006**: Todas las pantallas se pueden usar completas con teclado y sin desplazamiento horizontal de la página en anchos de 360 px en adelante (salvo la tabla, que se desplaza dentro de su contenedor).
 - **SC-007**: Ninguna pantalla muestra datos simulados, de ejemplo o calculados por la propia interfaz.
+- **SC-008**: El 100 % de los clientes de la cartera muestra su CUIL con guiones en la tabla, las tarjetas y el detalle, y buscar por cualquier CUIL (con o sin guiones) devuelve exactamente a ese cliente.
 
 ## Assumptions
 
@@ -193,7 +211,8 @@ La persona puede ver, en modo solo lectura, la configuración de scoring vigente
 - Las personas usuarias son internas; no se requiere inicio de sesión ni permisos (igual que la spec 001).
 - La edición de pesos y umbrales desde la interfaz queda fuera de alcance: el servicio solo permite consultarla y la spec 001 define que se edita en la configuración externa.
 - La evaluación de una cartera enviada por la persona (carga de un archivo o lista) queda fuera de alcance; la pantalla Cartera muestra la cartera almacenada.
-- "Guardar en cartera" desde "Nuevo cliente" queda fuera de alcance, porque el servicio no lo ofrece; el prototipo lo muestra deshabilitado como "Disponible próximamente" y puede mantenerse así.
+- "Guardar en cartera" desde "Nuevo cliente" queda fuera de alcance, porque el servicio no lo ofrece; el prototipo lo muestra deshabilitado como "Disponible próximamente" y puede mantenerse así. Aunque la spec 003 agrega el CRUD de clientes en el servicio, habilitar este botón (e ingresar o editar el CUIL en un formulario) sigue fuera de alcance y queda para una mejora posterior.
+- El CUIL es la identificación única del cliente (spec 003), pero el identificador (p. ej. `C-001`) sigue siendo la clave de las rutas y de la navegación. El prototipo de referencia no incluye CUIL, por lo que su ubicación en cada pantalla sigue lo descrito en FR-027.
 - El prototipo de referencia usa datos, pesos, umbrales y una fórmula simulados que difieren de la spec 001 (p. ej., umbrales 80/60); se toma solo su diseño, navegación y estados, nunca sus valores.
 - El indicador "Actualizado ahora" del prototipo refleja el momento de la última carga exitosa de la cartera.
 - La preferencia de modo claro/oscuro puede recordarse en el navegador de la persona; no se persiste en el servidor.

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest"
 
 import App from "@/App"
 import type { PortfolioResult } from "@/api/types"
-import { portfolioFixture, stubFetch } from "@/test/fixtures"
+import { metricsFixture, portfolioFixture, stubFetch } from "@/test/fixtures"
 import { renderWithProviders } from "@/test/render"
 
 function stubPortfolio(body: PortfolioResult = portfolioFixture, status = 200) {
@@ -97,5 +97,69 @@ describe("Cartera (US1)", () => {
     row.focus()
     await user.keyboard("{Enter}")
     expect(window.location.hash).toBe("#/cartera/C-002")
+  })
+})
+
+describe("CUIL en la cartera (US6, spec 003)", () => {
+  it("muestra la columna CUIL con guiones y un marcador si falta", async () => {
+    stubPortfolio()
+    await renderPortfolio()
+    expect(screen.getByRole("columnheader", { name: "CUIT/CUIL" })).toBeInTheDocument()
+    expect(screen.getByPlaceholderText("Buscar cliente")).toHaveAttribute(
+      "title",
+      "Buscar por nombre, ID o CUIT/CUIL",
+    )
+    expect(screen.getByText("Acme Ficticia").closest("tr")).toHaveTextContent("20-90000001-5")
+    expect(screen.getAllByText("C-005")[0].closest("tr")).toHaveTextContent("—")
+  })
+
+  it.each(["20900000015", "20-90000001-5", "90000001"])(
+    "filtra por CUIL con la búsqueda %j",
+    async (query) => {
+      stubPortfolio()
+      const { user } = await renderPortfolio()
+      await user.type(screen.getByPlaceholderText("Buscar cliente"), query)
+      await waitFor(() => expect(bodyRows()).toHaveLength(1))
+      expect(bodyRows()[0]).toHaveTextContent("Acme Ficticia")
+    },
+  )
+
+  it("sigue buscando por nombre", async () => {
+    stubPortfolio()
+    const { user } = await renderPortfolio()
+    await user.type(screen.getByPlaceholderText("Buscar cliente"), "acme")
+    await waitFor(() => expect(bodyRows()).toHaveLength(1))
+  })
+})
+
+const EMPTY_PORTFOLIO: PortfolioResult = {
+  results: [],
+  summary: { total: 0, by_level: { Top: 0, Estable: 0, "En riesgo": 0 }, invalid: 0 },
+}
+
+describe("Acceso a Nuevo cliente (US5, spec 004)", () => {
+  it("ofrece Nuevo cliente en el encabezado de la cartera", async () => {
+    stubPortfolio()
+    await renderPortfolio()
+    const main = screen.getByRole("main")
+    expect(within(main).getByRole("link", { name: "Nuevo cliente" })).toHaveAttribute("href", "#/nuevo")
+  })
+
+  it("el estado vacío también ofrece Nuevo cliente", async () => {
+    stubPortfolio(EMPTY_PORTFOLIO)
+    await renderPortfolio()
+    const empty = screen.getByText("Aún no hay clientes").parentElement!
+    expect(within(empty).getByRole("link", { name: "Nuevo cliente" })).toHaveAttribute("href", "#/nuevo")
+  })
+
+  it("abre el formulario de alta vacío", async () => {
+    stubFetch({
+      "GET /api/portfolio": { status: 200, body: portfolioFixture },
+      "GET /api/metrics": { status: 200, body: metricsFixture },
+    })
+    const { user } = await renderPortfolio()
+    await user.click(within(screen.getByRole("main")).getByRole("link", { name: "Nuevo cliente" }))
+    expect(await screen.findByRole("heading", { name: "Datos del cliente" })).toBeInTheDocument()
+    expect(screen.getByRole("textbox", { name: "CUIT/CUIL" })).toHaveValue("")
   })
 })

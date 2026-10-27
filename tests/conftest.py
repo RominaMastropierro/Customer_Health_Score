@@ -1,10 +1,13 @@
 import json
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
 from health_score import ScoringConfig
 from health_score.api.app import create_app
+from health_score.credit.bcra import Found
+from health_score.credit.models import BcraDebtResponse
 from health_score.models import ClientInput, validate_client_record
 
 DEFAULT_CONFIG_DATA = {
@@ -86,3 +89,38 @@ def repository() -> InMemoryClientRepository:
 @pytest.fixture
 def client(default_config, repository) -> TestClient:
     return TestClient(create_app(default_config, repository))
+
+
+# --- Consulta al BCRA (spec 005): fuentes simuladas, nunca el BCRA ni el modelo reales ---
+
+BCRA_FIXTURES = Path(__file__).parent / "fixtures" / "bcra"
+FAKE_SUMMARY = "Texto ficticio del resumen."
+
+
+def read_bcra(name: str) -> dict:
+    return json.loads((BCRA_FIXTURES / f"{name}.json").read_text(encoding="utf-8"))
+
+
+def found(name: str) -> Found:
+    raw = read_bcra(name)
+    return Found(raw=raw, parsed=BcraDebtResponse.model_validate(raw))
+
+
+class FakeBcraSource:
+    def __init__(self, result):
+        self.result = result
+        self.calls: list[str] = []
+
+    def lookup(self, digits: str):
+        self.calls.append(digits)
+        return self.result
+
+
+class FakeSummarizer:
+    def __init__(self, text: str | None = FAKE_SUMMARY):
+        self.text = text
+        self.calls: list[tuple] = []
+
+    def summarize(self, raw: dict, facts):
+        self.calls.append((raw, facts))
+        return self.text
