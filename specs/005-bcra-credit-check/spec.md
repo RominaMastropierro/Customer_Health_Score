@@ -136,7 +136,11 @@ Si el BCRA no tiene información del CUIT, la persona lo ve como un mensaje neut
 
 - **FR-001**: En la pantalla "Nuevo cliente", cuando el campo "CUIT/CUIL" pierde el foco y no está vacío, el dashboard MUST validar el valor y, si es válido, normalizarlo quitando los guiones para obtener los 11 dígitos con que se consulta. El campo MUST conservar el valor tal como se escribió (spec 004, FR-001). Mientras se escribe MUST NOT consultarse.
 - **FR-002**: Los formatos admitidos MUST ser los mismos que acepta el alta (spec 003): exactamente 11 dígitos, o `XX-XXXXXXXX-X` con los guiones en esas posiciones. Cualquier otro valor (otra cantidad de dígitos, letras, espacios, puntos u otros separadores, guiones fuera de lugar) MUST mostrar junto al campo "El CUIT/CUIL debe tener 11 dígitos, con o sin guiones (XX-XXXXXXXX-X)" y MUST NOT consultar.
-- **FR-003**: Si el formato es válido, el dashboard MUST comprobar el dígito verificador con el mismo algoritmo oficial (módulo 11) que usa el servicio; si no es válido, MUST mostrar "El dígito verificador del CUIT/CUIL no es válido" y MUST NOT consultar. Esta comprobación MUST definirse en un único lugar del dashboard y MUST verificarse con los mismos casos de prueba que la regla del servicio (constitución, Principio VI).
+- **FR-003**: El dígito verificador del CUIT/CUIL (algoritmo oficial módulo 11) MUST comprobarse **tanto en el dashboard como en el servicio**:
+  - **Dashboard**: si el formato es válido, MUST comprobar el dígito verificador antes de consultar; si no es válido, MUST mostrar "El dígito verificador del CUIT/CUIL no es válido" y MUST NOT consultar.
+  - **Servicio**: MUST volver a comprobarlo en la consulta (FR-010) y al guardar el alta, sin depender de la comprobación del dashboard (constitución, Principio V).
+
+  En cada lado la regla MUST definirse en un único lugar, y las dos implementaciones MUST verificarse con el mismo archivo de casos de prueba. Esta doble implementación es una excepción deliberada al Principio VI de la constitución ("un único lugar"), justificada en el plan (Complexity Tracking).
 - **FR-004**: Un campo vacío al perder el foco MUST NOT mostrar error ni consultar.
 
 **Consulta desde el dashboard**
@@ -152,13 +156,13 @@ Si el BCRA no tiene información del CUIT, la persona lo ve como un mensaje neut
 - **FR-010**: Nuestro servicio MUST ofrecer una operación documentada que recibe un CUIT/CUIL, lo valida con la regla única de la spec 003 (rechazando un valor inválido con un error de validación en español, sin consultar al BCRA ni al modelo) y consulta, con los 11 dígitos sin guiones que exige el BCRA, el método "Deudas" de la Central de Deudores.
 - **FR-011**: La respuesta del BCRA MUST validarse en el servicio antes de usarla (constitución, Principio V). Una respuesta con deudas cuya estructura no coincide con la documentada MUST tratarse como BCRA no disponible.
 - **FR-012**: El servicio MUST devolver al dashboard uno de estos resultados:
-  - **con deudas**: el texto redactado por el modelo y el nivel de tono (positivo, advertencia o riesgo);
+  - **con deudas**: el texto redactado por el modelo y el nivel de tono (positivo, advertencia o riesgo, o ninguno según FR-013);
   - **sin datos**: cuando el BCRA indica que no encontró datos para la identificación;
   - **BCRA no disponible**: cuando el BCRA responde con error, rechaza por exceso de tráfico, no responde en 10 segundos o devuelve una respuesta que no se puede validar;
   - **resumen no disponible**: cuando el BCRA informó deudas pero el modelo falla, no responde en 15 segundos o devuelve un texto vacío o de más de 1.200 caracteres.
 
   En ningún caso el servicio MUST exponer al dashboard mensajes técnicos del BCRA ni del proveedor del modelo.
-- **FR-013**: El nivel de tono MUST calcularlo el servicio sin el modelo, a partir de la peor situación entre las entidades del período más reciente: 1 positivo, 2 advertencia, 3 a 5 riesgo.
+- **FR-013**: El nivel de tono MUST calcularlo el servicio sin el modelo, a partir de la peor situación entre las entidades del período más reciente: 1 positivo, 2 advertencia, 3 a 5 riesgo. Si ninguna entidad informa una situación de 1 a 5, el resultado sigue siendo **con deudas**, sin nivel de tono, y el dashboard lo muestra neutro.
 - **FR-014**: La comunicación con el BCRA y con el proveedor del modelo MUST realizarse a través de interfaces de acceso propias, de modo que las pruebas puedan reemplazarlas por versiones simuladas y que cambiar de proveedor no requiera tocar la UI ni el resto del servicio (constitución, Principio IV).
 
 **Servicio: texto amigable con IA**

@@ -74,7 +74,8 @@ GET https://api.bcra.gob.ar/CentralDeDeudores/v1.0/Deudas/20900000244
 
 | Variable | Default | Uso |
 |----------|---------|-----|
-| `HEALTH_SCORE_BCRA_URL` | `https://api.bcra.gob.ar/CentralDeDeudores/v1.0` | Base del BCRA (un servidor simulado en demos) |
+| `HEALTH_SCORE_BCRA_URL` | `https://api.bcra.gob.ar/CentralDeDeudores/v1.0` | Base del BCRA |
+| `HEALTH_SCORE_DEMO_FIXTURES` | sin definir | Carpeta de fixtures; si está definida, el BCRA y el modelo se simulan (solo demos, research R14) |
 | `HEALTH_SCORE_SUMMARY_PROMPT` | `config/prompts/bcra-summary.md` | Prompt versionado |
 | `HEALTH_SCORE_SUMMARY_MODEL` | `claude-opus-5-5` | Modelo de Claude |
 | `ANTHROPIC_API_KEY_FILE` | sin definir | Ruta del secreto con la API key (Docker: `/run/secrets/anthropic_api_key`) |

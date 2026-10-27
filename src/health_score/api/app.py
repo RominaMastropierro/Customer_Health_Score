@@ -2,8 +2,10 @@
 
 import logging
 import os
+from pathlib import Path
 from typing import Annotated
 
+import anthropic
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
@@ -21,6 +23,17 @@ from health_score import (
     score_client,
     score_portfolio,
 )
+from health_score.credit import (
+    BcraSource,
+    ClaudeSummarizer,
+    CreditStatus,
+    CreditStatusRequest,
+    HttpBcraSource,
+    Summarizer,
+    check_credit,
+    load_prompt,
+)
+from health_score.credit.demo import load_demo
 from health_score.data import (
     ClientConflictError,
     ClientRepository,
@@ -51,6 +64,17 @@ CLIENTS_ENV = "HEALTH_SCORE_CLIENTS"
 DEFAULT_CLIENTS_PATH = "data/clients.json"
 DB_ENV = "HEALTH_SCORE_DB"
 DEFAULT_DB_PATH = "data/health_score.db"
+BCRA_URL_ENV = "HEALTH_SCORE_BCRA_URL"
+DEFAULT_BCRA_URL = "https://api.bcra.gob.ar/CentralDeDeudores/v1.0"
+SUMMARY_PROMPT_ENV = "HEALTH_SCORE_SUMMARY_PROMPT"
+DEFAULT_SUMMARY_PROMPT_PATH = "config/prompts/bcra-summary.md"
+SUMMARY_MODEL_ENV = "HEALTH_SCORE_SUMMARY_MODEL"
+DEFAULT_SUMMARY_MODEL = "claude-opus-5-5"
+# Ruta del secreto con la API key (Docker: /run/secrets/anthropic_api_key); nunca la clave.
+API_KEY_FILE_ENV = "ANTHROPIC_API_KEY_FILE"
+API_KEY_ENV = "ANTHROPIC_API_KEY"
+# Carpeta de fixtures ficticios; si está definida, el BCRA y el modelo se simulan (solo demos).
+DEMO_FIXTURES_ENV = "HEALTH_SCORE_DEMO_FIXTURES"
 
 UNAVAILABLE_MESSAGE = "La cartera no está disponible en este momento"
 UNAVAILABLE_RESPONSE = {503: {"description": "No se puede acceder a la base de datos"}}
@@ -112,7 +136,12 @@ def _stored_result(client: ClientInput, config: ScoringConfig) -> StoredClientSc
     )
 
 
-def create_app(config: ScoringConfig, repository: ClientRepository) -> FastAPI:
+def create_app(
+    config: ScoringConfig,
+    repository: ClientRepository,
+    credit_source: BcraSource | None = None,
+    summarizer: Summarizer | None = None,
+) -> FastAPI:
     app = FastAPI(
         title="Customer Health Score",
         description="Calcula el score de salud (0–100) y el nivel de cada cliente "
@@ -121,6 +150,9 @@ def create_app(config: ScoringConfig, repository: ClientRepository) -> FastAPI:
     )
     app.state.config = config
     app.state.repository = repository
+    # Sin fuentes (p. ej. en las pruebas previas), la consulta al BCRA nunca sale a la red.
+    app.state.credit_source = credit_source
+    app.state.summarizer = summarizer
 
     @app.exception_handler(RequestValidationError)
     async def spanish_validation_errors(_: Request, exc: RequestValidationError) -> JSONResponse:
@@ -305,7 +337,49 @@ def create_app(config: ScoringConfig, repository: ClientRepository) -> FastAPI:
     def get_metrics() -> list[MetricRange]:
         return metric_ranges()
 
+    @app.post(
+        "/credit-status",
+        response_model=CreditStatus,
+        tags=["crédito"],
+        summary="Consultar la situación crediticia en el BCRA",
+        description="Valida el CUIT/CUIL, consulta la Central de Deudores del BCRA y "
+        "devuelve un texto listo para mostrar. `status` indica el resultado: `with_debts` "
+        "(el texto es un resumen redactado por un modelo de IA y `tone` es el nivel visual), "
+        "`no_data` (el BCRA no registra deudas), `bcra_unavailable` (no se pudo consultar al "
+        "BCRA) o `summary_unavailable` (el BCRA respondió pero no se pudo preparar el "
+        "resumen). El CUIT va en el cuerpo para que no quede en los logs, y nada de la "
+        "consulta se guarda ni se registra.",
+        responses=INVALID_RESPONSE,
+    )
+    def post_credit_status(data: CreditStatusRequest, request: Request) -> CreditStatus:
+        return check_credit(data.cuil, request.app.state.credit_source, request.app.state.summarizer)
+
     return app
+
+
+def _api_key_from_env() -> str | None:
+    path = os.environ.get(API_KEY_FILE_ENV)
+    if path:
+        try:
+            return Path(path).read_text(encoding="utf-8").strip() or None
+        except OSError:
+            return None
+    return os.environ.get(API_KEY_ENV, "").strip() or None
+
+
+def _summarizer_from_env(prompt: str, model: str) -> Summarizer | None:
+    """Resumidor con la API key del secreto o de la variable de entorno (research R7).
+
+    No se usa el perfil de `ant auth login`: no hay forma fiable de detectarlo al arrancar.
+    Tampoco alcanza con construir `anthropic.Anthropic()`: sin credenciales no falla al
+    crearse sino en cada solicitud.
+    """
+    api_key = _api_key_from_env()
+    if api_key is None:
+        # Una sola advertencia al arrancar: el resto de la aplicación funciona igual (FR-029).
+        logger.warning("Sin credenciales del modelo: la consulta al BCRA no podrá resumir")
+        return None
+    return ClaudeSummarizer(prompt, model, anthropic.Anthropic(api_key=api_key))
 
 
 def app_from_env() -> FastAPI:
@@ -327,4 +401,17 @@ def app_from_env() -> FastAPI:
         logger.info("Carga inicial: %d clientes insertados", len(report.inserted))
         for item, reason in report.skipped:
             logger.warning("Carga inicial: se omitió %s (%s)", item, reason)
-    return create_app(config, SqlClientRepository(engine))
+    # Un prompt ausente o vacío lanza ConfigError aquí, como scoring.json.
+    prompt = load_prompt(os.environ.get(SUMMARY_PROMPT_ENV, DEFAULT_SUMMARY_PROMPT_PATH))
+    demo_fixtures = os.environ.get(DEMO_FIXTURES_ENV)
+    if demo_fixtures:
+        # Las demostraciones nunca usan el BCRA ni el modelo reales (Principio IX).
+        logger.warning("Modo demostración: BCRA y modelo simulados")
+        credit_source, summarizer = load_demo(demo_fixtures)
+    else:
+        model = os.environ.get(SUMMARY_MODEL_ENV, DEFAULT_SUMMARY_MODEL)
+        credit_source = HttpBcraSource(os.environ.get(BCRA_URL_ENV, DEFAULT_BCRA_URL))
+        summarizer = _summarizer_from_env(prompt, model)
+    return create_app(
+        config, SqlClientRepository(engine), credit_source=credit_source, summarizer=summarizer
+    )

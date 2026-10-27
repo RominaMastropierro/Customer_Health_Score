@@ -1,0 +1,40 @@
+{
+  "status": 200,
+  "results": {
+    "identificacion": 20900000244,
+    "denominacion": "EMPRESA FICTICIA S.A.",
+    "periodos": [
+      {
+        "periodo": "202407",
+        "entidades": [
+          {
+            "entidad": "BANCO FICTICIO DEL SUR",
+            "situacion": 5,
+            "fechaSit1": null,
+            "monto": 4100.0,
+            "diasAtrasoPago": 400,
+            "refinanciaciones": false,
+            "recategorizacionOblig": false,
+            "situacionJuridica": true,
+            "irrecDisposicionTecnica": true,
+            "enRevision": true,
+            "procesoJud": true
+          },
+          {
+            "entidad": "FINANCIERA INVENTADA S.A.",
+            "situacion": 3,
+            "fechaSit1": null,
+            "monto": 600.0,
+            "diasAtrasoPago": 120,
+            "refinanciaciones": false,
+            "recategorizacionOblig": true,
+            "situacionJuridica": false,
+            "irrecDisposicionTecnica": false,
+            "enRevision": false,
+            "procesoJud": false
+          }
+        ]
+      }
+    ]
+  }
+}

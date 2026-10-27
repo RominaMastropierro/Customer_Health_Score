@@ -36,7 +36,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PATH="/opt/venv/bin:$PATH" \
     HEALTH_SCORE_CONFIG=/app/config/scoring.json \
     HEALTH_SCORE_CLIENTS=/app/data/clients.json \
-    HEALTH_SCORE_DB=/var/lib/health-score/health_score.db
+    HEALTH_SCORE_DB=/var/lib/health-score/health_score.db \
+    HEALTH_SCORE_SUMMARY_PROMPT=/app/config/prompts/bcra-summary.md
+# La API key de Claude nunca va en ENV ni ARG: llega como Docker secret (spec 005)  [#13]
 
 # Usuario dedicado sin privilegios con IDs fijos; se quitan bits setuid/setgid  [#2]
 # /var/lib/health-score es el único directorio escribible (volumen de la base SQLite)  [#8]
@@ -49,6 +51,7 @@ WORKDIR /app
 # Código y datos semilla quedan de root y solo lectura para el proceso: no puede modificarlos  [#8]
 COPY --from=api-builder /opt/venv /opt/venv
 COPY config/scoring.json ./config/scoring.json
+COPY config/prompts ./config/prompts
 COPY data/clients.json ./data/clients.json
 
 USER 10001:10001
@@ -67,11 +70,14 @@ ENTRYPOINT ["uvicorn", "health_score.api.app:app_from_env", "--factory", \
 
 # ---------- web-builder: compila el bundle estático ----------
 FROM ${NODE_IMAGE} AS web-builder
-WORKDIR /build
+# Se replica la estructura del repo: lib/cuit.test.ts importa ../../../tests/fixtures/cuil_cases.json
+# y `tsc -b` también revisa las pruebas (spec 005, research R11)
+WORKDIR /build/frontend
 COPY frontend/package.json frontend/package-lock.json frontend/.npmrc ./
 # Se necesitan devDependencies (vite, typescript) solo en este stage; no llegan a la imagen final.
 # --ignore-scripts evita ejecutar scripts de instalación de terceros
 RUN npm ci --ignore-scripts
+COPY tests/fixtures/cuil_cases.json /build/tests/fixtures/cuil_cases.json
 COPY frontend/ ./
 RUN npm run build
 
@@ -92,7 +98,7 @@ RUN addgroup -S -g 10001 app \
 
 # Configuración y estáticos propiedad de root, solo lectura para el proceso  [#8]
 COPY frontend/nginx.conf /etc/nginx/nginx.conf
-COPY --from=web-builder /build/dist /usr/share/nginx/html
+COPY --from=web-builder /build/frontend/dist /usr/share/nginx/html
 
 USER 10001:10001
 EXPOSE 8080

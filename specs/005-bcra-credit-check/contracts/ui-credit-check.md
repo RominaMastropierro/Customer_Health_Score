@@ -18,7 +18,8 @@ El valor del campo nunca se reescribe (spec 004, FR-001).
 ## Presentación (bajo el campo, dentro de `ClientFields` vía `cuilStatus`)
 
 Es un contenedor `role="status"` con `aria-live="polite"`, así se anuncia sin mover el foco
-(FR-022).
+(FR-022). El `Alert` de adentro se usa con `role={undefined}`, para no anidar una segunda
+región con anuncio asertivo.
 
 | Estado | Contenido | Estilo |
 |--------|-----------|--------|
@@ -29,14 +30,15 @@ Es un contenedor `role="status"` con `aria-live="polite"`, así se anuncia sin m
 | `done` · `with_debts` · `null` | ídem | `Alert` neutro |
 | `done` · `no_data` | `message` | `Alert` neutro |
 | `done` · `bcra_unavailable` / `summary_unavailable` | `message` + botón "Reintentar" | `Alert` neutro con ícono de advertencia |
-| `failed` (red / servicio caído) | "No pudimos consultar la situación en el BCRA en este momento." + "Reintentar" | ídem |
+| `failed` (red / servicio caído / 28 s sin respuesta) | "No pudimos consultar la situación en el BCRA en este momento. Inténtalo de nuevo en unos minutos." + "Reintentar" | ídem |
 
 - El `message` se muestra como texto plano. Se respetan los saltos de línea, pero no se
   interpreta HTML ni Markdown.
 - Los colores salen de los tokens existentes (`top`, `stable`, `risk`) a través de
   `TONE_CLASSES` (`lib/display.ts`). No se agregan estilos ad hoc.
 - Calcular y "Guardar en cartera" no dependen del estado de la consulta (FR-023).
-- Tras un alta exitosa, el formulario se vacía y se llama `reset()` (FR-009).
+- Tras un alta exitosa, el formulario se vacía y se llama `clear()`; al salir de la
+  pantalla también (FR-009).
 
 ## Componentes y archivos
 

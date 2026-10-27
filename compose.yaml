@@ -34,11 +34,18 @@ services:
       - dbdata:/var/lib/health-score
       # Permite cambiar pesos/umbrales sin reconstruir (editar y reiniciar); solo lectura  [#8]
       - ./config/scoring.json:/app/config/scoring.json:ro
+      # Prompt del resumen del BCRA: se ajusta y se aplica con `docker compose restart api`  [#8]
+      - ./config/prompts/bcra-summary.md:/app/config/prompts/bcra-summary.md:ro
+    environment:
+      # Es la ruta del secreto, no la clave  [#13]
+      ANTHROPIC_API_KEY_FILE: /run/secrets/anthropic_api_key
+    secrets: [anthropic_api_key]          # [#13] API key de Claude (spec 005)
     mem_limit: 512m                     # [#7]
     memswap_limit: 512m                 # [#7] sin swap
     cpus: "1.0"                         # [#7]
     # Sin `ports:`: la API solo es accesible desde la red interna, a través de web  [#5]
-    networks: [backend]
+    # `egress` le da salida a internet para consultar al BCRA y a Claude (spec 005)  [#5]
+    networks: [backend, egress]
 
   web:
     <<: *hardening
@@ -62,9 +69,18 @@ networks:
   frontend: {}
   backend:
     internal: true                      # [#5] sin salida a internet e inaccesible desde fuera
+  # EXCEPCIÓN documentada (spec 005, research R13; SECURITY-DOCKER.md)  [#5]: red con salida
+  # a internet solo para `api`. Compose no puede limitarla por dominio, así que `api` puede
+  # salir a cualquier destino, no solo a api.bcra.gob.ar y api.anthropic.com. En producción,
+  # usar un proxy de salida con lista de dominios permitidos o reglas de firewall del host.
+  egress: {}
 
 volumes:
   dbdata: {}
 
-# No hay secretos: SQLite no usa credenciales. Si se agregan (p. ej. una base remota),
-# usar `secrets:` montados en /run/secrets, nunca variables de entorno  [#13]
+# API key de Claude (spec 005): archivo local fuera del repositorio (secrets/ está en
+# .gitignore y .dockerignore), montado en /run/secrets/anthropic_api_key. Nunca en variables
+# de entorno, ARG ni en la imagen  [#13]
+secrets:
+  anthropic_api_key:
+    file: ./secrets/anthropic_api_key.txt

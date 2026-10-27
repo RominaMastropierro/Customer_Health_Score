@@ -1,7 +1,12 @@
-import { screen, waitFor, within } from "@testing-library/react"
+import { act, screen, waitFor, within } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 
+import type { CreditStatus } from "@/api/types"
+import { CUIT_CHECK_DIGIT_MESSAGE, CUIT_FORMAT_MESSAGE } from "@/lib/cuit"
+import { TONE_CLASSES } from "@/lib/display"
+import { CREDIT_FAILED_MESSAGE } from "@/pages/new-client/CreditStatusPanel"
 import NewClientPage from "@/pages/new-client/NewClientPage"
+import { CREDIT_CHECK_TIMEOUT_MS } from "@/pages/new-client/useCreditCheck"
 import { clientRecordFixture, type FetchCall, metricsFixture, pending, stubFetch } from "@/test/fixtures"
 import { renderWithProviders } from "@/test/render"
 
@@ -326,5 +331,334 @@ describe("Errores al guardar (US2, spec 004)", () => {
     await calculate(user, { cuil: "" })
     await user.click(screen.getByRole("button", { name: SAVE }))
     expect(posts(calls)).toHaveLength(0)
+  })
+})
+
+// --- Consulta al BCRA (spec 005) ---
+
+const CREDIT = "POST /api/credit-status"
+const SUMMARY = "Texto ficticio del resumen."
+const LOADING = "Consultando situación en el BCRA…"
+const SOURCE = "Fuente: Central de Deudores del BCRA"
+
+function creditResult(overrides: Partial<CreditStatus> = {}): CreditStatus {
+  return { status: "with_debts", tone: "warning", message: SUMMARY, ...overrides }
+}
+
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } })
+}
+
+/** Respuestas controladas por la prueba, en el orden en que llegan las solicitudes. */
+function controlledRoute() {
+  const pendingResponses: ((response: Response) => void)[] = []
+  const route = () => new Promise<Response>((resolve) => pendingResponses.push(resolve))
+  return { route, respond: (index: number, response: Response) => pendingResponses[index](response) }
+}
+
+function creditCalls(calls: FetchCall[]) {
+  return calls.filter((c) => c.key === CREDIT)
+}
+
+async function blurCuit(user: User, value: string) {
+  const cuil = screen.getByLabelText("CUIT/CUIL")
+  await user.type(cuil, value)
+  await user.tab()
+}
+
+function creditPanel(): HTMLElement {
+  return screen.getByTestId("credit-status")
+}
+
+describe("consulta al BCRA", () => {
+  it("al salir del campo con un CUIT válido consulta una vez, sin guiones, y muestra el indicador", async () => {
+    const control = controlledRoute()
+    const { user, calls } = await renderSave({ [CREDIT]: control.route })
+    await blurCuit(user, "20-90000024-4")
+
+    expect(await within(creditPanel()).findByText(LOADING)).toBeInTheDocument()
+    expect(creditCalls(calls)).toHaveLength(1)
+    expect(JSON.parse(String(creditCalls(calls)[0].init?.body))).toEqual({ cuil: "20900000244" })
+    expect(calls.some((c) => c.key.includes("bcra.gob.ar"))).toBe(false)
+
+    control.respond(0, json(creditResult()))
+    expect(await within(creditPanel()).findByText(SUMMARY)).toBeInTheDocument()
+    expect(within(creditPanel()).getByText(SOURCE)).toBeInTheDocument()
+    expect(creditPanel()).toHaveAttribute("role", "status")
+    expect(within(creditPanel()).queryByText(LOADING)).not.toBeInTheDocument()
+  })
+
+  it.each([
+    ["positive", TONE_CLASSES.top.soft],
+    ["warning", TONE_CLASSES.stable.soft],
+    ["risk", TONE_CLASSES.risk.soft],
+  ] as const)("con tono %s usa los colores de la escala", async (tone, className) => {
+    const { user } = await renderSave({ [CREDIT]: { status: 200, body: creditResult({ tone }) } })
+    await blurCuit(user, "20900000244")
+    await within(creditPanel()).findByText(SUMMARY)
+    const alert = creditPanel().querySelector('[data-slot="alert"]')
+    expect(alert).toHaveClass(className)
+    expect(alert).not.toHaveAttribute("role")
+  })
+
+  it("sin tono muestra el texto neutro", async () => {
+    const { user } = await renderSave({ [CREDIT]: { status: 200, body: creditResult({ tone: null }) } })
+    await blurCuit(user, "20900000244")
+    await within(creditPanel()).findByText(SUMMARY)
+    const alert = creditPanel().querySelector('[data-slot="alert"]')!
+    for (const tone of Object.values(TONE_CLASSES)) expect(alert).not.toHaveClass(tone.soft)
+  })
+
+  it("calcular sin tocar el CUIT no consulta al BCRA", async () => {
+    const { user, calls } = await renderSave({ [CREDIT]: { status: 200, body: creditResult() } })
+    await calculate(user, { cuil: "" })
+    expect(creditCalls(calls)).toHaveLength(0)
+  })
+
+  it("con un resultado visible, calcular y guardar funcionan igual", async () => {
+    const { user, calls, onSaved } = await renderSave({
+      [CREDIT]: { status: 200, body: creditResult({ tone: "risk" }) },
+      "POST /api/clients": { status: 201, body: clientRecordFixture },
+    })
+    await blurCuit(user, CUIT)
+    await within(creditPanel()).findByText(SUMMARY)
+    await calculate(user, { cuil: "" })
+    await user.click(screen.getByRole("button", { name: SAVE }))
+    await waitFor(() => expect(onSaved).toHaveBeenCalledWith(clientRecordFixture))
+    expect(JSON.parse(String(posts(calls)[0].init?.body)).cuil).toBe(CUIT)
+  })
+})
+
+describe("consulta al BCRA: CUIT mal escrito (US2)", () => {
+  it.each(["20-9000002-4", "20 90000024 4", "20A90000024"])(
+    "con %s muestra el error de formato y no consulta",
+    async (value) => {
+      const { user, calls } = await renderSave({ [CREDIT]: { status: 200, body: creditResult() } })
+      await blurCuit(user, value)
+
+      expect(await screen.findByText(CUIT_FORMAT_MESSAGE)).toBeInTheDocument()
+      const cuil = screen.getByLabelText("CUIT/CUIL")
+      expect(cuil).toHaveAttribute("aria-invalid", "true")
+      expect(cuil).toHaveAttribute("aria-describedby", "cuil-error")
+      expect(document.getElementById("cuil-error")).toHaveTextContent(CUIT_FORMAT_MESSAGE)
+      expect(cuil).toHaveValue(value)
+      expect(creditCalls(calls)).toHaveLength(0)
+    },
+  )
+
+  it("con dígito verificador incorrecto lo indica y no consulta", async () => {
+    const { user, calls } = await renderSave({ [CREDIT]: { status: 200, body: creditResult() } })
+    await blurCuit(user, "20900000245")
+    expect(await screen.findByText(CUIT_CHECK_DIGIT_MESSAGE)).toBeInTheDocument()
+    expect(creditCalls(calls)).toHaveLength(0)
+  })
+
+  it("con el campo vacío no muestra error ni consulta", async () => {
+    const { user, calls } = await renderSave({ [CREDIT]: { status: 200, body: creditResult() } })
+    screen.getByLabelText("CUIT/CUIL").focus()
+    await user.tab()
+    expect(screen.getByLabelText("CUIT/CUIL")).not.toHaveAttribute("aria-invalid")
+    expect(document.getElementById("cuil-error")).toBeNull()
+    expect(creditCalls(calls)).toHaveLength(0)
+  })
+
+  it("al corregir el valor quita el error y consulta", async () => {
+    const { user, calls } = await renderSave({ [CREDIT]: { status: 200, body: creditResult() } })
+    await blurCuit(user, "20900000245")
+    await screen.findByText(CUIT_CHECK_DIGIT_MESSAGE)
+    await user.clear(screen.getByLabelText("CUIT/CUIL"))
+    await blurCuit(user, "20900000244")
+
+    expect(screen.queryByText(CUIT_CHECK_DIGIT_MESSAGE)).not.toBeInTheDocument()
+    await within(creditPanel()).findByText(SUMMARY)
+    expect(creditCalls(calls)).toHaveLength(1)
+  })
+})
+
+/** Deja correr las promesas ya resueltas antes de mirar la pantalla. */
+function settle() {
+  return new Promise((resolve) => setTimeout(resolve, 0))
+}
+
+describe("consulta al BCRA: cambiar el CUIT (US3)", () => {
+  it("al escribir en el campo el resultado desaparece de inmediato", async () => {
+    const { user } = await renderSave({ [CREDIT]: { status: 200, body: creditResult() } })
+    await blurCuit(user, CUIT)
+    await within(creditPanel()).findByText(SUMMARY)
+    await user.type(screen.getByLabelText("CUIT/CUIL"), "1")
+    expect(within(creditPanel()).queryByText(SUMMARY)).not.toBeInTheDocument()
+  })
+
+  it("una consulta en curso se descarta al modificar el campo", async () => {
+    const control = controlledRoute()
+    const { user } = await renderSave({ [CREDIT]: control.route })
+    await blurCuit(user, CUIT)
+    await within(creditPanel()).findByText(LOADING)
+    await user.type(screen.getByLabelText("CUIT/CUIL"), "1")
+    control.respond(0, json(creditResult()))
+    await settle()
+    expect(within(creditPanel()).queryByText(SUMMARY)).not.toBeInTheDocument()
+    expect(within(creditPanel()).queryByText(LOADING)).not.toBeInTheDocument()
+  })
+
+  it("el mismo CUIT escrito de otra forma no repite la consulta", async () => {
+    const { user, calls } = await renderSave({ [CREDIT]: { status: 200, body: creditResult() } })
+    await blurCuit(user, "20-90000024-4")
+    await within(creditPanel()).findByText(SUMMARY)
+    await user.clear(screen.getByLabelText("CUIT/CUIL"))
+    expect(within(creditPanel()).queryByText(SUMMARY)).not.toBeInTheDocument()
+    await blurCuit(user, "20900000244")
+    expect(within(creditPanel()).getByText(SUMMARY)).toBeInTheDocument()
+    expect(creditCalls(calls)).toHaveLength(1)
+  })
+
+  it("salir del campo varias veces sin cambiarlo consulta una sola vez", async () => {
+    const { user, calls } = await renderSave({ [CREDIT]: { status: 200, body: creditResult() } })
+    await blurCuit(user, CUIT)
+    await within(creditPanel()).findByText(SUMMARY)
+    for (let i = 0; i < 2; i++) {
+      screen.getByLabelText("CUIT/CUIL").focus()
+      await user.tab()
+    }
+    expect(creditCalls(calls)).toHaveLength(1)
+  })
+
+  it("con una consulta en curso, volver a salir del campo no envía otra", async () => {
+    const control = controlledRoute()
+    const { user, calls } = await renderSave({ [CREDIT]: control.route })
+    await blurCuit(user, CUIT)
+    screen.getByLabelText("CUIT/CUIL").focus()
+    await user.tab()
+    expect(creditCalls(calls)).toHaveLength(1)
+  })
+
+  it("si la respuesta de un CUIT anterior llega tarde, solo se muestra la del actual", async () => {
+    const control = controlledRoute()
+    const { user, calls } = await renderSave({ [CREDIT]: control.route })
+    await blurCuit(user, "20900000244")
+    await user.clear(screen.getByLabelText("CUIT/CUIL"))
+    await blurCuit(user, "20900000015")
+    expect(creditCalls(calls)).toHaveLength(2)
+
+    control.respond(1, json(creditResult({ message: "Resumen del CUIT actual." })))
+    expect(await within(creditPanel()).findByText("Resumen del CUIT actual.")).toBeInTheDocument()
+    control.respond(0, json(creditResult({ message: "Resumen del CUIT anterior." })))
+    await settle()
+    expect(within(creditPanel()).queryByText("Resumen del CUIT anterior.")).not.toBeInTheDocument()
+    expect(within(creditPanel()).getByText("Resumen del CUIT actual.")).toBeInTheDocument()
+  })
+
+  it("tras guardar en cartera el resultado desaparece", async () => {
+    const { user, onSaved } = await renderSave({
+      [CREDIT]: { status: 200, body: creditResult() },
+      "POST /api/clients": { status: 201, body: clientRecordFixture },
+    })
+    await blurCuit(user, CUIT)
+    await within(creditPanel()).findByText(SUMMARY)
+    await calculate(user, { cuil: "" })
+    await user.click(screen.getByRole("button", { name: SAVE }))
+    await waitFor(() => expect(onSaved).toHaveBeenCalled())
+    expect(creditPanel()).toBeEmptyDOMElement()
+  })
+
+  it("al salir de la pantalla la consulta en curso se aborta y no se muestra", async () => {
+    const errors = vi.spyOn(console, "error")
+    const control = controlledRoute()
+    const { user, calls, unmount } = await renderSave({ [CREDIT]: control.route })
+    await blurCuit(user, CUIT)
+    unmount()
+    expect(creditCalls(calls)[0].init?.signal?.aborted).toBe(true)
+    control.respond(0, json(creditResult()))
+    await settle()
+    expect(screen.queryByText(SUMMARY)).not.toBeInTheDocument()
+    expect(errors).not.toHaveBeenCalled()
+    errors.mockRestore()
+  })
+
+  it("un resultado no disponible no se conserva: volver al mismo CUIT consulta otra vez", async () => {
+    const unavailable = creditResult({ status: "bcra_unavailable", tone: null, message: "Aviso ficticio." })
+    const { user, calls } = await renderSave({ [CREDIT]: { status: 200, body: unavailable } })
+    await blurCuit(user, CUIT)
+    await within(creditPanel()).findByText("Aviso ficticio.")
+    await user.clear(screen.getByLabelText("CUIT/CUIL"))
+    await blurCuit(user, CUIT)
+    await waitFor(() => expect(creditCalls(calls)).toHaveLength(2))
+  })
+})
+
+/** Primera respuesta fija; las siguientes quedan pendientes para observar el indicador. */
+function firstThenPending(first: () => Promise<Response>) {
+  let count = 0
+  return () => (count++ === 0 ? first() : pending())
+}
+
+async function expectSaveStillWorks(user: User, onSaved: ReturnType<typeof vi.fn>) {
+  await calculate(user, { cuil: "" })
+  await user.click(screen.getByRole("button", { name: SAVE }))
+  await waitFor(() => expect(onSaved).toHaveBeenCalledWith(clientRecordFixture))
+}
+
+describe("consulta al BCRA: sin datos y fallas (US4)", () => {
+  const SAVE_ROUTE = { "POST /api/clients": { status: 201, body: clientRecordFixture } }
+
+  it("sin datos muestra el mensaje neutro, sin Reintentar", async () => {
+    const noData = creditResult({ status: "no_data", tone: null, message: "Mensaje ficticio sin datos." })
+    const { user, onSaved } = await renderSave({ [CREDIT]: { status: 200, body: noData }, ...SAVE_ROUTE })
+    await blurCuit(user, CUIT)
+    await within(creditPanel()).findByText("Mensaje ficticio sin datos.")
+    expect(within(creditPanel()).queryByRole("button", { name: "Reintentar" })).not.toBeInTheDocument()
+    expect(within(creditPanel()).queryByText(SOURCE)).not.toBeInTheDocument()
+    await expectSaveStillWorks(user, onSaved)
+  })
+
+  it.each(["bcra_unavailable", "summary_unavailable"] as const)(
+    "con %s muestra el aviso y Reintentar repite la consulta",
+    async (status) => {
+      const unavailable = creditResult({ status, tone: null, message: "Aviso ficticio." })
+      const route = firstThenPending(async () => json(unavailable))
+      const { user, calls, onSaved } = await renderSave({ [CREDIT]: route, ...SAVE_ROUTE })
+      await blurCuit(user, CUIT)
+      await within(creditPanel()).findByText("Aviso ficticio.")
+
+      await user.click(within(creditPanel()).getByRole("button", { name: "Reintentar" }))
+
+      expect(await within(creditPanel()).findByText(LOADING)).toBeInTheDocument()
+      expect(creditCalls(calls)).toHaveLength(2)
+      expect(creditCalls(calls)[1].init?.body).toBe(creditCalls(calls)[0].init?.body)
+      await expectSaveStillWorks(user, onSaved)
+    },
+  )
+
+  it.each([
+    ["el servicio responde 502", async () => json({ detail: "Bad Gateway" }, 502)],
+    ["no hay conexión", () => Promise.reject(new TypeError("Failed to fetch"))],
+  ])("si %s muestra el aviso de no disponibilidad con Reintentar", async (_, first) => {
+    const { user, calls, onSaved } = await renderSave({ [CREDIT]: firstThenPending(first), ...SAVE_ROUTE })
+    await blurCuit(user, CUIT)
+    expect(await within(creditPanel()).findByText(CREDIT_FAILED_MESSAGE)).toBeInTheDocument()
+
+    await user.click(within(creditPanel()).getByRole("button", { name: "Reintentar" }))
+    expect(await within(creditPanel()).findByText(LOADING)).toBeInTheDocument()
+    expect(creditCalls(calls)).toHaveLength(2)
+    await expectSaveStillWorks(user, onSaved)
+  })
+
+  it("si el servicio no responde a tiempo, aborta y muestra el aviso", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ["setTimeout", "clearTimeout"] })
+    try {
+      const { user, calls } = await renderSave({ [CREDIT]: () => pending() })
+      await blurCuit(user, CUIT)
+      await within(creditPanel()).findByText(LOADING)
+
+      await act(async () => {
+        vi.advanceTimersByTime(CREDIT_CHECK_TIMEOUT_MS)
+      })
+
+      expect(within(creditPanel()).getByText(CREDIT_FAILED_MESSAGE)).toBeInTheDocument()
+      expect(within(creditPanel()).getByRole("button", { name: "Reintentar" })).toBeInTheDocument()
+      expect(creditCalls(calls)[0].init?.signal?.aborted).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

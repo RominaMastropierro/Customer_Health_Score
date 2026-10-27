@@ -46,6 +46,8 @@ venv
 .vscode
 *.log
 tests
+# Casos de CUIT compartidos: el build del dashboard compila la prueba que los importa (spec 005)
+!tests/fixtures/cuil_cases.json
 scripts
 package-lock.json
 !frontend/package-lock.json

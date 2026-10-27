@@ -70,7 +70,9 @@ Se calculan sobre el período más reciente (el `periodo` mayor).
 | `entity_count` | `int` | Cantidad de entidades del período |
 | `total_pesos` | `str` | `sum(monto) * 1000`, formateado `"$ 59.000"`; montos `None` se omiten |
 | `max_days_late` | `int` | Máximo de `diasAtrasoPago`; 0 si no hay |
-| `tone` | `"positive" \| "warning" \| "risk" \| None` | 1 → positive, 2 → warning, 3–5 → risk; `None` si no hay situación válida |
+| `tone` | `"positive" \| "warning" \| "risk" \| None` | 1 → positive, 2 → warning, 3–5 → risk; `None` si no hay situación válida (FR-013) |
+
+En `<datos_calculados>`, un valor `None` se escribe `no informado`, nunca `None`.
 
 ## 4. Servicio: salida
 
@@ -114,14 +116,21 @@ POST /credit-status
 ```text
 idle ──blur válido──▶ loading(digits) ──200──▶ done(digits, CreditStatus)
   ▲                       │                       │
-  │                       └─fetch falla──▶ failed(digits)
-  └──── cambio del campo / guardado / salir de la pantalla (reset, aborta) ◀──┘
+  │                       └─fetch falla o 28 s──▶ failed(digits)
+  ├──── cambio del campo: reset() (aborta; conserva el último `done` con deudas o sin datos) ◀──┘
+  └──── guardado exitoso / salir de la pantalla: clear() (aborta y olvida todo)
 ```
 
 - Si `check(d)` llega con el mismo `d` en `loading` o `done`, no se hace nada (FR-006, FR-007).
+- Si `check(d)` llega en `idle` y el último `done` conservado es de `d`, se restaura sin
+  solicitud (US3, escenario 3). Solo se conservan `with_debts` y `no_data`: un "no
+  disponible" se vuelve a consultar.
+- Cada consulta tiene un tiempo límite propio de 28 s en el dashboard (SC-005); al vencer, se
+  aborta y pasa a `failed`.
 - `retry()` solo está disponible en `failed`, o en `done` con `status` `bcra_unavailable` o
   `summary_unavailable`. Vuelve a `loading` con el mismo `digits`.
-- Cuando el estado es `failed` se muestra el aviso de no disponibilidad (US4, escenario 4).
+- Cuando el estado es `failed` se muestra el aviso de no disponibilidad (US4, escenario 4), con
+  el mismo texto de `bcra_unavailable`.
 
 ### Tipo TS `CreditStatus` (`api/types.ts`)
 

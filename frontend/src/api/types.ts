@@ -75,3 +75,14 @@ export interface MetricRange {
   max: number | null
   message: string
 }
+
+// Consulta al BCRA (spec 005): el dashboard muestra `message` tal como llega.
+export type CreditStatusKind = "with_debts" | "no_data" | "bcra_unavailable" | "summary_unavailable"
+
+export type CreditTone = "positive" | "warning" | "risk"
+
+export interface CreditStatus {
+  status: CreditStatusKind
+  tone: CreditTone | null
+  message: string
+}

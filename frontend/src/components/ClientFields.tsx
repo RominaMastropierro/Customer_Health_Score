@@ -41,6 +41,7 @@ function Field({
   value,
   error,
   children,
+  after,
 }: {
   id: string
   label: string
@@ -48,6 +49,7 @@ function Field({
   value?: string
   error?: string
   children: ReactNode
+  after?: ReactNode
 }) {
   return (
     <div className="flex flex-col gap-2">
@@ -65,6 +67,7 @@ function Field({
           {error}
         </span>
       )}
+      {after}
     </div>
   )
 }
@@ -80,12 +83,17 @@ export default function ClientFields({
   fieldErrors,
   onChange,
   idPrefix = "",
+  onCuilBlur,
+  cuilStatus,
 }: {
   ranges: Record<MetricName, MetricRange>
   values: ClientFormValues
   fieldErrors: ClientFormErrors
   onChange: (field: keyof ClientFormValues, value: string) => void
   idPrefix?: string
+  // Solo el alta las pasa (consulta al BCRA, spec 005); sin ellas, la edición no cambia.
+  onCuilBlur?: () => void
+  cuilStatus?: ReactNode
 }) {
   const usage = ranges.usage
   const nps = ranges.nps
@@ -98,8 +106,15 @@ export default function ClientFields({
   return (
     <>
       {/* Texto puro: sin reformatear ni recortar, para no alterar ceros iniciales ni guiones
-          (FR-001). El formato y el dígito verificador los valida el servidor. */}
-      <Field id={id("cuil")} label={CUIL_LABEL} hint="Con o sin guiones" error={fieldErrors.cuil}>
+          (FR-001). El servidor valida formato y dígito verificador al guardar; el alta además
+          los comprueba al salir del campo, antes de consultar al BCRA (spec 005). */}
+      <Field
+        id={id("cuil")}
+        label={CUIL_LABEL}
+        hint="Con o sin guiones"
+        error={fieldErrors.cuil}
+        after={cuilStatus}
+      >
         <Input
           id={id("cuil")}
           type="text"
@@ -108,6 +123,7 @@ export default function ClientFields({
           placeholder="XX-XXXXXXXX-X"
           value={values.cuil}
           onChange={(e) => onChange("cuil", e.target.value)}
+          onBlur={onCuilBlur}
           {...invalid("cuil")}
         />
       </Field>

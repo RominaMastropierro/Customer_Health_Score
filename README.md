@@ -48,6 +48,10 @@ solo hacen falta la primera vez; después alcanza con activar el entorno y corre
 Alternativa a las dos terminales: no requiere Python ni Node.js, solo Docker con Compose.
 
 ```powershell
+# Una sola vez: la API key de Claude como Docker secret (ver "Consulta al BCRA")
+New-Item -ItemType Directory -Force secrets | Out-Null
+Set-Content -NoNewline -Encoding ascii secrets/anthropic_api_key.txt "<tu clave>"
+
 docker compose up -d --build     # dashboard en http://127.0.0.1:8080
 docker compose logs -f api       # ver los logs de la API
 docker compose down              # detener (la cartera se conserva)
@@ -102,6 +106,7 @@ La documentación interactiva queda en `http://127.0.0.1:8000/docs`.
 | `DELETE /clients/{client_id}` | Elimina un cliente |
 | `GET /config` | Muestra la configuración activa |
 | `GET /metrics` | Lista las métricas de entrada y sus rangos válidos |
+| `POST /credit-status` | Consulta la situación crediticia de un CUIT en el BCRA (spec 005) |
 
 Sobre el CRUD de clientes:
 
@@ -119,6 +124,11 @@ Variables de entorno:
 | `HEALTH_SCORE_CONFIG` | `config/scoring.json` | Archivo de configuración del scoring |
 | `HEALTH_SCORE_DB` | `data/health_score.db` | Base SQLite donde se guarda la cartera |
 | `HEALTH_SCORE_CLIENTS` | `data/clients.json` | Archivo de la carga inicial (se usa solo cuando la base nunca fue inicializada) |
+| `HEALTH_SCORE_BCRA_URL` | `https://api.bcra.gob.ar/CentralDeDeudores/v1.0` | Base de la Central de Deudores del BCRA |
+| `HEALTH_SCORE_SUMMARY_PROMPT` | `config/prompts/bcra-summary.md` | Prompt del resumen del BCRA; si falta o está vacío, el servicio no arranca |
+| `HEALTH_SCORE_SUMMARY_MODEL` | `claude-opus-5-5` | Modelo de Claude que redacta el resumen |
+| `ANTHROPIC_API_KEY_FILE` | sin definir | Ruta del archivo con la API key de Claude (en Docker, `/run/secrets/anthropic_api_key`) |
+| `HEALTH_SCORE_DEMO_FIXTURES` | sin definir | Carpeta de fixtures ficticios; si está definida, el BCRA y el modelo se simulan (solo demos) |
 
 La primera vez que arranca, el servicio crea la base y carga los 20 clientes ficticios de
 `data/clients.json`. Los cambios posteriores quedan en la base y sobreviven a los reinicios;
@@ -139,6 +149,8 @@ Gestión de clientes desde el dashboard (spec 004):
   confirmación y es definitiva).
 - Los errores del servicio (CUIT/CUIL inválido o ya registrado, métricas fuera de rango) se
   muestran junto a cada campo, y la cartera se actualiza sola después de cada operación.
+- **Situación en el BCRA** (spec 005): al salir del campo CUIT/CUIL en "Nuevo cliente", se
+  muestra lo que informa la Central de Deudores. Ver [Consulta al BCRA](#consulta-al-bcra-spec-005).
 
 ```powershell
 cd frontend
@@ -161,6 +173,52 @@ Para probar el rendimiento con una cartera grande:
 una base nueva: `HEALTH_SCORE_DB` apuntando a un archivo que no exista (p. ej.
 `tmp/health_1000.db`) y `HEALTH_SCORE_CLIENTS` apuntando al archivo generado. Los registros
 fuera de rango que genera el script se omiten en la carga inicial (se informan en el log).
+
+## Consulta al BCRA (spec 005)
+
+Al dar de alta un cliente, cuando el campo CUIT/CUIL pierde el foco, el dashboard valida el
+CUIT (formato y dígito verificador) y pide a la API su situación en la Central de Deudores del
+BCRA. La API consulta al BCRA con los 11 dígitos sin guiones y, si hay deudas, le pide a Claude
+un texto en lenguaje claro guiado por el prompt de
+[config/prompts/bcra-summary.md](config/prompts/bcra-summary.md). El tono visual (normal,
+advertencia o riesgo) lo calcula el código, no el modelo.
+
+- Es **informativa**: no cambia el score ni el nivel, y no impide calcular ni guardar.
+- El navegador nunca habla con el BCRA ni con Claude: todo pasa por `POST /credit-status`.
+- **Los datos reales solo se muestran** (constitución v2.4.0, Principio IX): el resultado no se
+  guarda y la API no registra en sus logs el CUIT, la denominación, las deudas, el prompt ni
+  el texto. Las pruebas y la demostración usan solo datos ficticios y fuentes simuladas.
+
+**API key de Claude.** En local, definir `ANTHROPIC_API_KEY` o `ANTHROPIC_API_KEY_FILE` antes
+de `uvicorn`. En Docker, crear `secrets/anthropic_api_key.txt` (ver *Levantar con Docker* y
+[SECURITY-DOCKER.md](SECURITY-DOCKER.md)); nunca va en variables de entorno de la imagen. Sin
+clave, la API arranca igual y, cuando hay deudas, muestra "No pudimos preparar el resumen…".
+
+> **Antes de usarla con datos reales**: confirmar que la cuenta u organización de la API key
+> de Anthropic opera bajo términos comerciales que no usan los datos de la API para entrenar
+> modelos (constitución v2.4.0, Principio IX; spec 005, T050b).
+>
+> Estado: **confirmado el 2026-10-26** por la persona responsable del proyecto, para la cuenta
+> de la API key actual. Si se cambia de cuenta u organización, volver a confirmarlo.
+
+**Demostración sin datos reales.** El BCRA y el modelo se simulan con los fixtures ficticios
+de `tests/fixtures/`; no hace falta API key ni salida a internet:
+
+```powershell
+$env:HEALTH_SCORE_DEMO_FIXTURES = "tests/fixtures"
+uvicorn health_score.api.app:app_from_env --factory --reload
+# o con Docker:
+docker compose -f compose.yaml -f compose.demo.yaml up -d --build
+```
+
+Los CUIT de la demostración y lo que muestra cada uno están en
+[specs/005-bcra-credit-check/quickstart.md](specs/005-bcra-credit-check/quickstart.md).
+
+**Ajustar el prompt.** Editar [config/prompts/bcra-summary.md](config/prompts/bcra-summary.md)
+y reiniciar la API (`docker compose restart api` en Docker). Para revisar los textos que
+genera, ejecutar `python scripts/review_bcra_prompt.py`: llama al modelo real con las
+respuestas ficticias de `tests/fixtures/bcra/`, **tiene costo** y escribe los textos en
+`tmp/prompt-review/` para revisarlos a mano.
 
 ## Cambiar pesos y umbrales
 

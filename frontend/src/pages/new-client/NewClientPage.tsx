@@ -8,9 +8,12 @@ import { blankMetricErrors, toMetrics } from "@/components/ClientFields"
 import PageHeader from "@/components/PageHeader"
 import StatePanel from "@/components/StatePanel"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { validateCuit } from "@/lib/cuit"
 import { CUIL_LABEL } from "@/lib/display"
+import CreditStatusPanel from "@/pages/new-client/CreditStatusPanel"
 import ScoreForm, { type FormValues, type ScoreFormState } from "@/pages/new-client/ScoreForm"
 import ScoreResultPanel from "@/pages/new-client/ScoreResultPanel"
+import { useCreditCheck } from "@/pages/new-client/useCreditCheck"
 
 // Sin valores de ejemplo (FR-005): el formulario arranca vacío.
 const EMPTY: FormValues = { cuil: "", name: "", usage: "", support_tickets: "", nps: "", days_to_renewal: "" }
@@ -43,6 +46,7 @@ export default function NewClientPage({
   const inFlight = useRef<AbortController | null>(null)
   const savingRef = useRef(false)
   const mounted = useRef(true)
+  const credit = useCreditCheck()
 
   useEffect(() => {
     mounted.current = true
@@ -61,11 +65,28 @@ export default function NewClientPage({
   >
 
   const change = (field: keyof FormValues, value: string) => {
+    // Un resultado nunca debe corresponder a un CUIT distinto del escrito (FR-008).
+    if (field === "cuil") credit.reset()
     setForm((prev) => ({
       values: { ...prev.values, [field]: value },
       fieldErrors: { ...prev.fieldErrors, [field]: undefined },
       formErrors: prev.formErrors,
     }))
+  }
+
+  // La consulta al BCRA se dispara al salir del campo, nunca mientras se escribe (FR-001).
+  const cuilBlur = () => {
+    const value = form.values.cuil
+    if (value === "") return
+    const validation = validateCuit(value)
+    if (validation.ok) {
+      credit.check(validation.digits)
+      return
+    }
+    // El mismo fieldErrors.cuil del alta: hereda aria-invalid, aria-describedby y el borrado
+    // al escribir (research R12).
+    const message = validation.message
+    setForm((prev) => ({ ...prev, fieldErrors: { ...prev.fieldErrors, cuil: message } }))
   }
 
   const submit = async () => {
@@ -125,6 +146,7 @@ export default function NewClientPage({
       onClientsChanged?.()
       if (!mounted.current) return
       setForm({ values: EMPTY, fieldErrors: {}, formErrors: [] })
+      credit.clear()
       setResult(null)
       setCalculatedFrom(null)
       setStatus("idle")
@@ -173,6 +195,10 @@ export default function NewClientPage({
           submitting={status === "submitting"}
           onChange={change}
           onSubmit={submit}
+          onCuilBlur={cuilBlur}
+          cuilStatus={
+            <CreditStatusPanel state={credit.state} onRetry={credit.retry} />
+          }
         />
         <ScoreResultPanel
           result={result}

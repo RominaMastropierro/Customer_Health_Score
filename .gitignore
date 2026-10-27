@@ -11,3 +11,6 @@ tmp/
 
 # Base SQLite generada en ejecución (spec 003)
 data/*.db
+
+# Secretos locales para Docker (spec 005)
+secrets/

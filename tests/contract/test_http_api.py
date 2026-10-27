@@ -328,3 +328,17 @@ def test_openapi_client_schemas(store_openapi):
     assert "client_id" not in schemas["ClientData"]["properties"]
     assert set(schemas["ClientRecord"]["properties"]) == {"client_id", "cuil", "name", "metrics"}
     assert "cuil" in schemas["StoredClientScoreResult"]["properties"]
+
+
+# --- Consulta al BCRA (spec 005) ---
+
+
+def test_openapi_declares_credit_status(openapi):
+    operation = openapi["paths"]["/credit-status"]["post"]
+    schema = operation["responses"]["200"]["content"]["application/json"]["schema"]
+    assert schema["$ref"].endswith("/CreditStatus")
+    assert "422" in operation["responses"]
+    assert operation.get("summary")
+    assert operation.get("description")
+    properties = openapi["components"]["schemas"]["CreditStatus"]["properties"]
+    assert set(properties) == {"status", "tone", "message"}

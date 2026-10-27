@@ -35,7 +35,8 @@ No quedan `NEEDS CLARIFICATION`. Cada decisión indica qué requisito resuelve.
 
 - **Decisión**: `HttpBcraSource` usa `urllib.request.urlopen(Request(url), timeout=10)` contra
   `https://api.bcra.gob.ar/CentralDeDeudores/v1.0/Deudas/{11 dígitos}`. La URL base es
-  configurable con `HEALTH_SCORE_BCRA_URL`, para usar un servidor simulado en una demo.
+  configurable con `HEALTH_SCORE_BCRA_URL` (las demos no la usan: usan el modo simulado de
+  R14).
   `HTTPError` 404 se traduce a "sin datos"; cualquier otro `HTTPError` (400, 429, 5xx),
   `URLError`, `TimeoutError` o JSON inválido, a "BCRA no disponible".
 - **Rationale**: Principio I. Es un único `GET` síncrono sin autenticación, y los endpoints
@@ -76,7 +77,7 @@ No quedan `NEEDS CLARIFICATION`. Cada decisión indica qué requisito resuelve.
     corta (`stop_reason == "max_tokens"`), es "resumen no disponible".
   - El modelo es configurable, para poder bajar a `claude-sonnet-5-5` si la latencia o el
     costo lo piden, sin tocar código.
-- **Entrenamiento con los datos (constitución v2.3.0, Principio IX)**: según los términos
+- **Entrenamiento con los datos (constitución v2.4.0, Principio IX)**: según los términos
   comerciales de Anthropic, las entradas y salidas de la API no se usan para entrenar modelos.
   **Acción previa a producción**: confirmar que la cuenta u organización que provee la API key
   opera bajo esos términos comerciales, y dejarlo anotado en el README.
@@ -86,15 +87,21 @@ No quedan `NEEDS CLARIFICATION`. Cada decisión indica qué requisito resuelve.
 
 ## R6. Tiempo límite y reintentos del modelo
 
-- **Decisión**: `client.with_options(timeout=15.0, max_retries=0)`. Se capturan
-  `anthropic.APITimeoutError`, `anthropic.APIConnectionError`, `anthropic.RateLimitError` y
-  `anthropic.APIStatusError` (en ese orden), y todas dan "resumen no disponible" (FR-012).
+- **Decisión**: `client.with_options(timeout=15.0, max_retries=0)`. Se captura
+  `anthropic.AnthropicError`, la base de todos los errores del SDK (timeout, conexión, 429,
+  4xx/5xx y errores del cliente, como la falta de credenciales), y da "resumen no disponible"
+  (FR-012).
   También dan "resumen no disponible": `stop_reason` igual a `refusal` o `max_tokens`, y un
   texto vacío o de más de 1.200 caracteres.
 - **Rationale**: el SDK reintenta 2 veces por defecto, y el tiempo real puede llegar a
   `timeout × 3` = 45 s, lo que rompe SC-005 (aviso en menos de 30 s). Con 10 s del BCRA más
   15 s del modelo, el peor caso queda en ~25 s. El reintento lo decide la persona con
   "Reintentar" (US4).
+- **Límite de los tiempos límite**: el `timeout` de `urlopen` y el del SDK se aplican a cada
+  operación de red (conexión, cada lectura), no a la duración total. Una respuesta que llega
+  de a poco puede superar los 25 s. Por eso el dashboard tiene su propio límite de 28 s por
+  consulta (`useCreditCheck`): al vencer, aborta y muestra el aviso con "Reintentar", lo que
+  garantiza SC-005 (menos de 30 s) sin agregar un plazo total en el servicio.
 - **Sin `fallbacks` de rechazo**: en Opus 5.5 la guía recomienda activar por defecto el
   fallback del servidor ante rechazos (`fallbacks: "default"`). No se activa aquí porque
   volvería a ejecutar la solicitud en otro modelo dentro de la misma llamada, lo que puede
@@ -106,8 +113,9 @@ No quedan `NEEDS CLARIFICATION`. Cada decisión indica qué requisito resuelve.
 - **Decisión**: la API key se lee de un archivo cuya ruta indica `ANTHROPIC_API_KEY_FILE`
   (en Docker, el secreto `anthropic_api_key` montado en `/run/secrets/anthropic_api_key`) y
   se pasa explícitamente con `anthropic.Anthropic(api_key=...)`. Si la variable no está
-  definida, el SDK resuelve las credenciales como siempre (`ANTHROPIC_API_KEY` o un perfil de
-  `ant auth login`), que es lo cómodo en desarrollo local. Si no hay credenciales, la API
+  definida, se usa `ANTHROPIC_API_KEY`, que es lo cómodo en desarrollo local. No se usa el
+  perfil de `ant auth login`: no hay forma fiable de detectarlo al arrancar y haría que las
+  pruebas dependan de la máquina. Si no hay credenciales, la API
   arranca igual, registra **una** advertencia al iniciar (sin datos personales) y cada consulta
   con deudas devuelve "resumen no disponible".
 - **Rationale**: FR-025 y la constitución (secretos con Docker secrets, nunca en `ENV`, `ARG`
@@ -181,11 +189,15 @@ No quedan `NEEDS CLARIFICATION`. Cada decisión indica qué requisito resuelve.
 
 - **Decisión**: un hook `useCreditCheck()` en `frontend/src/pages/new-client/` guarda
   `{ digits, state }`, donde `state` es `idle`, `loading`, `done` (con el `CreditStatus`) o
-  `failed`. Expone tres funciones:
+  `failed`. Expone cuatro funciones:
   - `check(digits)`: si `digits` coincide con el CUIT en curso o ya consultado, no hace nada
     (FR-006, FR-007). Si no, aborta el anterior y lanza uno nuevo con su `AbortController`.
-  - `reset()`: aborta y limpia. Se llama en cada cambio del campo (FR-008), al guardar con
-    éxito y al desmontar (FR-009).
+  - `reset()`: aborta y vuelve a `idle`, pero conserva el último resultado con deudas o sin
+    datos (un "no disponible" no se conserva, para que volver al CUIT consulte otra vez); se llama en cada
+    cambio del campo (FR-008). Un `check` posterior con el mismo CUIT lo restaura sin una
+    solicitud nueva (US3, escenario 3).
+  - `clear()`: además olvida el último resultado; se llama al guardar con éxito y al
+    desmontar (FR-009).
   - `retry()`: repite la consulta del CUIT actual.
 
   `NewClientPage` llama a `validateCuit` en el `onBlur` del campo: si es inválido, pone el
@@ -222,6 +234,20 @@ No quedan `NEEDS CLARIFICATION`. Cada decisión indica qué requisito resuelve.
     `tests/fixtures/bcra/*.json`, que también usan las pruebas. El script
     `scripts/review_bcra_prompt.py` corre el prompt real sobre esas respuestas y escribe los
     textos para revisarlos a mano. **Llama al modelo real y tiene costo**: se ejecuta solo a
-    mano, nunca en la suite.
+    mano, nunca en la suite. Lo permite la constitución v2.4.0 (Principio IX): fixtures
+    ficticios y revisión manual documentada en el plan.
+  - **Demo (modo simulado)**: si `HEALTH_SCORE_DEMO_FIXTURES` está definida, `app_from_env`
+    usa `FixtureBcraSource` (lee `bcra/*.json` según el índice `bcra-demo.json`, que mapea
+    CUIT sintéticos a fixtures; un CUIT fuera del índice da "sin datos") y `DemoSummarizer`
+    (texto fijo "[Demostración] …" con los datos calculados, o `None` si el índice marca una
+    falla). Los dos se construyen con el mismo índice. `FixtureBcraSource` pone en
+    `results.identificacion` el CUIT consultado, como el BCRA real, y `DemoSummarizer` busca
+    por ese valor: `Summarizer.summarize` no recibe el CUIT, y los fixtures comparten la misma
+    identificación. En Docker se activa con `compose.demo.yaml`, que monta `tests/fixtures` `:ro`.
 - **Rationale**: FR-026 y SC-009. La calidad del texto no se puede afirmar con un modelo
-  falso: por eso la revisión manual de FR-028 y SC-006.
+  falso: por eso la revisión manual de FR-028 y SC-006. El modo demo existe porque la
+  constitución exige que las demostraciones usen versiones simuladas del BCRA y del modelo:
+  un CUIT "sintético" enviado al BCRA real podría pertenecer a una persona real. El índice
+  vive fuera de `bcra/` para que el script de revisión no lo tome como una respuesta del BCRA.
+- **Alternativas**: un servidor HTTP estático con los fixtures (no simula el modelo y obliga a
+  nombrar los archivos con el CUIT, sin extensión).

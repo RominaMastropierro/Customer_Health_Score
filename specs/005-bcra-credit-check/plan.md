@@ -54,7 +54,7 @@ internet desde `api` hacia `api.bcra.gob.ar` y `api.anthropic.com`.
 **Project Type**: web-service (`src/health_score`) + web app (`frontend/`)
 
 **Performance Goals**: texto visible en menos de 10 s en el 95 % de los casos (SC-001); aviso
-de falla en menos de 30 s (SC-005). Presupuesto: 10 s del BCRA + 15 s del modelo, sin
+de falla en menos de 30 s (SC-005), con un tiempo límite de 28 s en el dashboard (R6). Presupuesto: 10 s del BCRA + 15 s del modelo, sin
 reintentos.
 
 **Constraints**:
@@ -74,13 +74,14 @@ reintentos.
 El BCRA **no** suma dependencia: se consulta con `urllib.request` (R3). El SDK trae `httpx2`
 como dependencia transitiva, y el código propio no la usa.
 
-### Proveedor del modelo (constitución v2.3.0, Principio IX)
+### Proveedor del modelo (constitución v2.4.0, Principio IX)
 
 Anthropic (Claude). Según sus términos comerciales, las entradas y salidas de la API no se
 usan para entrenar modelos. Se envía la respuesta completa del BCRA, incluidos CUIT y
 denominación (clarificación del 2026-10-26). **Antes de usarlo con datos reales** hay que
 confirmar que la API key pertenece a una cuenta bajo esos términos (R5) y anotarlo en el
-README.
+README. Es una puerta explícita del plan de tareas (T050b): sin esa confirmación no se hace
+la demo con datos reales.
 
 ## Constitution Check
 
@@ -93,10 +94,10 @@ README.
 | III | Config externa | Sí | Sin pesos ni umbrales nuevos. El prompt, el modelo y la URL del BCRA son configuración externa (`config/prompts/`, variables de entorno) |
 | IV | Adapter | Sí | `BcraSource` y `Summarizer` son Protocols; se inyectan en `create_app` y se reemplazan por versiones simuladas en las pruebas |
 | V | Validación en el límite | Sí | Cuerpo con el tipo `Cuil`; la respuesta del BCRA se valida con Pydantic antes de usarla; la salida del modelo se valida (`stop_reason`, largo, vacío). La validación del dashboard es solo una mejora de uso: el servicio no depende de ella |
-| VI | Reglas únicas | Sí, con duplicación controlada | Dígito verificador en `cuil.py` y en `lib/cuit.ts`, con **un solo** archivo de casos para los dos (R11; la spec lo pide en FR-003). Tono y textos fijos solo en `credit/service.py`; descripciones de situación solo en el prompt |
+| VI | Reglas únicas | Sí, con 1 excepción documentada | FR-003 exige comprobar el dígito verificador **en el dashboard y en el servicio**: queda en `cuil.py` y en `lib/cuit.ts`, una vez en cada lado, con **un solo** archivo de casos para los dos (R11; ver Complexity Tracking). Tono y textos fijos solo en `credit/service.py`; descripciones de situación solo en el prompt |
 | VII | Pruebas | Sí | pytest para validación, interpretación, tono, fallas y logs; Vitest para el flujo de UI; casos normales, límite e inválidos del CUIT compartidos |
 | VIII | API documentada | Sí | `POST /credit-status` con `CreditStatusRequest`/`CreditStatus`, `summary`, `description` y 422 declarado ([contrato](contracts/http-api-changes.md)) |
-| IX | Privacidad (v2.3.0) | Sí, con la excepción de consulta en tiempo de uso | Datos reales solo en tiempo de uso; nada se guarda ni se registra (POST para que el CUIT no llegue a los access logs); el proveedor no entrena con los datos (a confirmar con la cuenta); pruebas, fixtures y demos con CUIT sintéticos, entidades ficticias y fuentes simuladas |
+| IX | Privacidad (v2.4.0) | Sí, con la excepción de consulta en tiempo de uso | Datos reales solo en tiempo de uso; nada se guarda ni se registra (POST para que el CUIT no llegue a los access logs); el proveedor no entrena con los datos (a confirmar con la cuenta, T050b); pruebas, fixtures y demos con CUIT sintéticos y entidades ficticias. Las pruebas y las demos usan fuentes simuladas: las demos, con `FixtureBcraSource` y `DemoSummarizer` (`HEALTH_SCORE_DEMO_FIXTURES`), nunca el BCRA ni el modelo reales. La revisión manual del prompt (FR-028, T045) usa el modelo real con fixtures ficticios, solo a mano, como permite la v2.4.0 |
 | X | Incremental | Sí | US2 (validación) se demuestra sin backend nuevo; US1 sobre US2; US3 y US4 sobre US1 ([quickstart](quickstart.md)) |
 | — | Contenedores y despliegue | Sí, con 1 excepción documentada | La API key va como Docker secret, nunca en `ENV`; el prompt se monta `:ro`. Excepción: la red `egress` no restringe dominios (R13), documentada en `compose.yaml` y `SECURITY-DOCKER.md` |
 
@@ -133,6 +134,7 @@ src/health_score/
 │   ├── models.py                # BcraDebtResponse…BcraEntity, CreditFacts, CreditStatus(Request)
 │   ├── bcra.py                  # BcraSource (Protocol), HttpBcraSource (urllib), BcraLookup
 │   ├── summarizer.py            # Summarizer (Protocol), ClaudeSummarizer, load_prompt
+│   ├── demo.py                  # FixtureBcraSource, DemoSummarizer (solo modo demo)
 │   └── service.py               # check_credit(), compute_facts(), tone_for(), textos fijos
 └── api/app.py                   # + POST /credit-status; create_app(…, credit_source, summarizer);
                                  #   app_from_env lee BCRA_URL, prompt, modelo y API key
@@ -153,13 +155,16 @@ frontend/src/
 tests/
 ├── fixtures/
 │   ├── cuil_cases.json          # NUEVO: casos compartidos backend/frontend
+│   ├── bcra-demo.json           # NUEVO: índice CUIT sintético → fixture para la demo
 │   └── bcra/*.json              # NUEVO: respuestas ficticias del BCRA (situaciones 1–5,
 │                                #   varias entidades, atrasos, marcas, datos incompletos)
 ├── unit/
 │   ├── test_cuil.py             # + casos desde cuil_cases.json
 │   ├── test_bcra_source.py      # NUEVO: urlopen simulado
 │   ├── test_credit_service.py   # NUEVO: facts, tono, textos fijos, flujo
-│   └── test_summarizer.py       # NUEVO: cliente falso; timeout, refusal, vacío, largo
+│   ├── test_summarizer.py       # NUEVO: cliente falso; timeout, refusal, vacío, largo
+│   ├── test_summarizer_from_env.py  # NUEVO: credenciales desde archivo o variable
+│   └── test_credit_demo.py      # NUEVO: modo demo sin red
 ├── integration/test_credit_status_api.py   # NUEVO: endpoint completo con fakes; logs sin datos
 └── contract/test_http_api.py    # + prueba OpenAPI de /credit-status (EXPECTED_ENDPOINTS intacto)
 
@@ -168,6 +173,7 @@ scripts/review_bcra_prompt.py    # NUEVO: revisión manual del prompt con el mod
 pyproject.toml                   # + anthropic
 compose.yaml                     # + red egress (solo api), secreto anthropic_api_key,
                                  #   montaje :ro del prompt, ANTHROPIC_API_KEY_FILE
+compose.demo.yaml                # NUEVO: override de demo (fuentes simuladas, fixtures :ro)
 Dockerfile                       # copia config/prompts/ en la imagen api
 .gitignore                       # + secrets/
 SECURITY-DOCKER.md               # + excepción de salida y manejo del secreto
@@ -183,5 +189,5 @@ cambia (`ClientFields`) lo hace con props opcionales.
 
 | Decisión | Por qué se necesita | Alternativa más simple descartada porque |
 |----------|---------------------|------------------------------------------|
-| Regla del dígito verificador en Python **y** TypeScript (Principio VI) | FR-003: no consultar si el CUIT es inválido, sin ir al servidor | Validar solo en el servidor obliga a una solicitud por cada CUIT mal escrito; se mitiga con un único archivo de casos que prueban las dos implementaciones |
+| Regla del dígito verificador en Python **y** TypeScript (excepción al Principio VI) | FR-003 exige la comprobación en los dos lados: el dashboard, para no consultar si el CUIT es inválido sin ir al servidor; el servicio, porque no puede depender del cliente (Principio V) | Validar solo en el servidor obliga a una solicitud por cada CUIT mal escrito; se mitiga con un único archivo de casos que prueban las dos implementaciones |
 | Red `egress` sin restricción por dominio | El servicio necesita salir al BCRA y a Anthropic | Un proxy de salida con lista de dominios permitidos cumple mejor FR-030, pero suma una imagen y su endurecimiento; queda documentado como mejora para producción |

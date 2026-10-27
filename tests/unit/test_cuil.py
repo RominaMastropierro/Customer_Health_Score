@@ -1,3 +1,6 @@
+import json
+from pathlib import Path
+
 import pytest
 from pydantic import BaseModel, ValidationError
 
@@ -73,3 +76,25 @@ def test_leading_zero_is_kept_as_text():
     value = body + str(check_digit(body))
     assert Holder(cuil=value).cuil == value
     assert value.startswith("0")
+
+
+# --- Casos compartidos con el dashboard (spec 005, FR-003; research R11) ---
+
+SHARED_CASES = json.loads(
+    (Path(__file__).parents[1] / "fixtures" / "cuil_cases.json").read_text(encoding="utf-8")
+)
+
+
+@pytest.mark.parametrize("case", SHARED_CASES["valid"], ids=lambda c: c["input"])
+def test_shared_valid_cases(case):
+    assert normalize_cuil(case["input"]) == case["digits"]
+
+
+@pytest.mark.parametrize("value", SHARED_CASES["format_error"])
+def test_shared_format_errors(value):
+    assert error_of(value)["type"] == "cuil_format"
+
+
+@pytest.mark.parametrize("value", SHARED_CASES["check_digit_error"])
+def test_shared_check_digit_errors(value):
+    assert error_of(value)["type"] == "cuil_check_digit"

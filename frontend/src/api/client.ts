@@ -3,6 +3,7 @@ import type {
   ClientMetrics,
   ClientRecord,
   ClientScoreResult,
+  CreditStatus,
   MetricName,
   MetricRange,
   PortfolioResult,
@@ -113,6 +114,11 @@ export function postScore(metrics: ClientMetrics, signal?: AbortSignal) {
     days_to_renewal: metrics.days_to_renewal,
   }
   return request<ScoreResult>("/score", { method: "POST", body: JSON.stringify(body), signal })
+}
+
+// El CUIT va en el cuerpo y no en la URL para que no quede en los access logs (research R1).
+export function getCreditStatus(cuil: string, signal?: AbortSignal) {
+  return request<CreditStatus>("/credit-status", { method: "POST", body: JSON.stringify({ cuil }), signal })
 }
 
 export function getConfig(signal?: AbortSignal) {

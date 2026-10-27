@@ -1,17 +1,19 @@
 <!--
 Sync Impact Report
-- Cambio de versión: 2.2.0 → 2.3.0 (MINOR: ampliación sustancial de la guía del Principio IX
-  con una excepción acotada; la regla de datos ficticios se mantiene para código, tests,
-  fixtures, ejemplos, demos e historial)
-- Principios modificados: IX. Privacidad de los Datos (NO NEGOCIABLE), mismo título; se
-  agrega la excepción "consulta en tiempo de uso" de fuentes públicas oficiales y su envío a
-  un proveedor de modelo de IA que no entrene con esos datos, sin guardar ni registrar nada.
+- Cambio de versión: 2.3.0 → 2.4.0 (MINOR: ampliación de la guía del Principio IX; permite
+  algo que antes estaba prohibido, así que no es una aclaración sin efecto semántico)
+- Principios modificados: IX. Privacidad de los Datos (NO NEGOCIABLE), mismo título:
+  - la obligación de usar versiones simuladas de las fuentes y del modelo se acota a las
+    pruebas automatizadas y las demostraciones (los fixtures y los datos de ejemplo siguen
+    siendo exclusivamente ficticios);
+  - se permite la revisión manual de un prompt enviando fixtures ficticios al modelo real,
+    solo a mano y documentada en el plan.
 - Secciones añadidas: ninguna
 - Secciones eliminadas: ninguna
-- Motivo: specs/005-bcra-credit-check (consulta a la Central de Deudores del BCRA en el alta
-  de clientes, con un texto redactado por un modelo de IA).
-- Artefactos dependientes: el plan de specs/005-bcra-credit-check debe justificar el
-  proveedor del modelo y verificar las condiciones de la excepción en su Constitution Check.
+- Motivo: specs/005-bcra-credit-check, FR-028 y SC-006 (la calidad del texto del prompt solo
+  se puede revisar con el modelo real) y el análisis de consistencia del 2026-10-26.
+- Artefactos dependientes: el plan de specs/005-bcra-credit-check debe documentar la revisión
+  del prompt en su Constitution Check, y su quickstart debe usar una demo totalmente simulada.
   Plantillas (.specify/templates/*) revisadas: no requieren cambios, porque leen la
   constitución al ejecutarse.
 - TODOs diferidos: ninguno
@@ -133,7 +135,11 @@ fuente.
     registrarse en logs (tampoco la identificación consultada, el prompt ni el texto
     generado);
   - las pruebas, los datos de ejemplo, los fixtures y las demostraciones MUST seguir siendo
-    exclusivamente ficticios y MUST usar versiones simuladas de esas fuentes y del modelo.
+    exclusivamente ficticios; las pruebas automatizadas y las demostraciones MUST usar
+    versiones simuladas de esas fuentes y del modelo;
+  - la revisión manual de un prompt MAY enviar fixtures ficticios al modelo real, porque no
+    contiene datos reales: se ejecuta solo a mano, nunca en la suite de pruebas, y el plan
+    de la funcionalidad MUST documentarla.
 
 **Justificación**: elimina el riesgo de exponer información sensible de clientes reales. La
 excepción permite el valor de consultar fuentes oficiales al momento del alta sin que ningún
@@ -237,4 +243,4 @@ vulnerabilidad en la aplicación o en sus dependencias.
 - **Cumplimiento**: cada plan y cada revisión de cambios MUST verificar el cumplimiento de esta
   constitución. Toda complejidad adicional MUST justificarse explícitamente.
 
-**Version**: 2.3.0 | **Ratified**: 2026-10-10 | **Last Amended**: 2026-10-26
+**Version**: 2.4.0 | **Ratified**: 2026-10-10 | **Last Amended**: 2026-10-26

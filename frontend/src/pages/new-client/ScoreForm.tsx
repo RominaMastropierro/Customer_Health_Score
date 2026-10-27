@@ -1,4 +1,4 @@
-import type { FormEvent } from "react"
+import type { FormEvent, ReactNode } from "react"
 import { AlertTriangle, Loader2 } from "lucide-react"
 
 import type { MetricName, MetricRange } from "@/api/types"
@@ -22,12 +22,16 @@ export default function ScoreForm({
   submitting,
   onChange,
   onSubmit,
+  onCuilBlur,
+  cuilStatus,
 }: {
   ranges: Record<MetricName, MetricRange>
   form: ScoreFormState
   submitting: boolean
   onChange: (field: keyof FormValues, value: string) => void
   onSubmit: () => void
+  onCuilBlur?: () => void
+  cuilStatus?: ReactNode
 }) {
   const { values, fieldErrors, formErrors } = form
 
@@ -54,7 +58,14 @@ export default function ScoreForm({
           </Alert>
         )}
 
-        <ClientFields ranges={ranges} values={values} fieldErrors={fieldErrors} onChange={onChange} />
+        <ClientFields
+          ranges={ranges}
+          values={values}
+          fieldErrors={fieldErrors}
+          onChange={onChange}
+          onCuilBlur={onCuilBlur}
+          cuilStatus={cuilStatus}
+        />
 
         <div className="flex flex-col gap-3 border-t pt-6 sm:flex-row sm:items-center">
           <Button type="submit" size="lg" disabled={submitting} className={cn(submitting && "opacity-80")}>
