@@ -83,6 +83,12 @@ confirmar que la API key pertenece a una cuenta bajo esos términos (R5) y anota
 README. Es una puerta explícita del plan de tareas (T050b): sin esa confirmación no se hace
 la demo con datos reales.
 
+**Alternativa local: Ollama** (2026-10-27, research R5b). Con `HEALTH_SCORE_SUMMARIZER=ollama`
+el resumen lo redacta un modelo local (`qwen2.5:7b` por defecto). La respuesta del BCRA no
+sale de la máquina y Ollama no entrena con ella, así que cumple el Principio IX sin la
+confirmación T050b. Costo: en CPU no se cumplen SC-001 ni SC-005 (25-50 s por resumen), y por
+eso los tiempos límite del modelo y del dashboard son configurables.
+
 ## Constitution Check
 
 *GATE: debe pasar antes de Phase 0. Re-evaluado tras el diseño de Phase 1.*
@@ -92,7 +98,7 @@ la demo con datos reales.
 | I | Simplicidad | Sí | Una sola dependencia nueva, justificada arriba. El BCRA se consulta con la biblioteca estándar. No hay proxy de salida (R13) ni caché, y no se agregan librerías al frontend |
 | II | Separación | Sí | `credit/` no importa `scoring` ni al revés; el scoring sigue siendo puro. El dashboard no interpreta la respuesta del BCRA ni calcula nada de crédito: solo valida el CUIT antes de consultar |
 | III | Config externa | Sí | Sin pesos ni umbrales nuevos. El prompt, el modelo y la URL del BCRA son configuración externa (`config/prompts/`, variables de entorno) |
-| IV | Adapter | Sí | `BcraSource` y `Summarizer` son Protocols; se inyectan en `create_app` y se reemplazan por versiones simuladas en las pruebas |
+| IV | Adapter | Sí | `BcraSource` y `Summarizer` son Protocols; se inyectan en `create_app` y se reemplazan por versiones simuladas en las pruebas. `Summarizer` tiene dos implementaciones reales, `ClaudeSummarizer` y `OllamaSummarizer` (R5b), elegidas por configuración |
 | V | Validación en el límite | Sí | Cuerpo con el tipo `Cuil`; la respuesta del BCRA se valida con Pydantic antes de usarla; la salida del modelo se valida (`stop_reason`, largo, vacío). La validación del dashboard es solo una mejora de uso: el servicio no depende de ella |
 | VI | Reglas únicas | Sí, con 1 excepción documentada | FR-003 exige comprobar el dígito verificador **en el dashboard y en el servicio**: queda en `cuil.py` y en `lib/cuit.ts`, una vez en cada lado, con **un solo** archivo de casos para los dos (R11; ver Complexity Tracking). Tono y textos fijos solo en `credit/service.py`; descripciones de situación solo en el prompt |
 | VII | Pruebas | Sí | pytest para validación, interpretación, tono, fallas y logs; Vitest para el flujo de UI; casos normales, límite e inválidos del CUIT compartidos |

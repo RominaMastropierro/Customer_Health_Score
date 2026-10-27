@@ -63,14 +63,24 @@ También:
 
 ## 3. Revisión del prompt (FR-028)
 
+Envía solo fixtures ficticios (constitución v2.4.0, Principio IX) y escribe los textos y la
+duración de cada llamada en `tmp/prompt-review/`.
+
+**Con Ollama** (research R5b), sin costo; requiere `ollama pull qwen2.5:7b`:
+
+```powershell
+python scripts/review_bcra_prompt.py --provider ollama [--model qwen2.5:7b]
+```
+
+**Con Claude**:
+
 > **Requisito previo** (T050b): confirmar que la cuenta de la API key opera bajo términos
 > comerciales sin entrenamiento con los datos de la API y que está anotado en el README.
-> Llama al modelo real con fixtures ficticios (constitución v2.4.0, Principio IX) y tiene
-> costo: se ejecuta solo a mano y con aprobación.
+> Tiene costo: se ejecuta solo a mano y con aprobación.
 
 ```powershell
 $env:ANTHROPIC_API_KEY = "<tu clave>"     # o ANTHROPIC_API_KEY_FILE
-python scripts/review_bcra_prompt.py      # escribe los textos y la duración de cada llamada
+python scripts/review_bcra_prompt.py --provider claude
 ```
 
 Revisar contra FR-017 a FR-019 y SC-006: peor situación, entidades y total correctos; ninguna

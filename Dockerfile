@@ -79,6 +79,8 @@ COPY frontend/package.json frontend/package-lock.json frontend/.npmrc ./
 RUN npm ci --ignore-scripts
 COPY tests/fixtures/cuil_cases.json /build/tests/fixtures/cuil_cases.json
 COPY frontend/ ./
+# Espera máxima de la consulta al BCRA en el dashboard; vacío = 28 s (compose.ollama.yaml la sube)
+ARG VITE_CREDIT_CHECK_TIMEOUT_MS=""
 RUN npm run build
 
 # ---------- web: imagen final ----------

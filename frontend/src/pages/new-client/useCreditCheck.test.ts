@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { getCreditStatus } from "@/api/client"
 import type { CreditStatus } from "@/api/types"
-import { useCreditCheck } from "@/pages/new-client/useCreditCheck"
+import { creditCheckTimeoutMs, useCreditCheck } from "@/pages/new-client/useCreditCheck"
 
 vi.mock("@/api/client", () => ({ getCreditStatus: vi.fn() }))
 
@@ -38,7 +38,7 @@ describe("useCreditCheck", () => {
     expect(mocked).toHaveBeenCalledTimes(1)
   })
 
-  it("reset aborta la señal y descarta la respuesta tardía", async () => {
+  it("reset aborta la seÃ±al y descarta la respuesta tardÃ­a", async () => {
     const pendingResult = deferred()
     mocked.mockReturnValue(pendingResult.promise)
     const { result } = renderHook(() => useCreditCheck())
@@ -51,7 +51,7 @@ describe("useCreditCheck", () => {
     expect(result.current.state).toEqual({ kind: "idle" })
   })
 
-  it("después de reset restaura el último resultado sin consultar; clear lo olvida", async () => {
+  it("despuÃ©s de reset restaura el Ãºltimo resultado sin consultar; clear lo olvida", async () => {
     mocked.mockResolvedValue(RESULT)
     const { result } = renderHook(() => useCreditCheck())
     act(() => result.current.check("20900000244"))
@@ -65,5 +65,17 @@ describe("useCreditCheck", () => {
     act(() => result.current.clear())
     act(() => result.current.check("20900000244"))
     expect(mocked).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe("creditCheckTimeoutMs", () => {
+  it("usa 28 s si no estÃ¡ configurado o el valor no es vÃ¡lido", () => {
+    for (const value of [undefined, "", "abc", "0", "-5", "1.5"]) {
+      expect(creditCheckTimeoutMs(value)).toBe(28_000)
+    }
+  })
+
+  it("usa el valor configurado en milisegundos", () => {
+    expect(creditCheckTimeoutMs("90000")).toBe(90_000)
   })
 })

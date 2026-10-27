@@ -85,6 +85,46 @@ No quedan `NEEDS CLARIFICATION`. Cada decisión indica qué requisito resuelve.
   con Claude); generar el texto con plantillas (descartado por la usuaria: el texto lo redacta
   un modelo); streaming (innecesario para un texto corto que se muestra completo).
 
+## R5b. Proveedor alternativo: modelo local con Ollama (agregado el 2026-10-27)
+
+- **Contexto**: la cuenta de Anthropic del proyecto no tiene créditos de API. Ollama ya está
+  instalado en la máquina de desarrollo (0.32.5).
+- **Decisión**: `OllamaSummarizer`, segunda implementación de `Summarizer` (Principio IV), con
+  `urllib.request` de la biblioteca estándar contra `POST {HEALTH_SCORE_OLLAMA_URL}/api/chat`.
+  No se agrega dependencia (Principio I). Se elige con `HEALTH_SCORE_SUMMARIZER=ollama`; el
+  valor por defecto sigue siendo `claude`, y un valor desconocido impide arrancar
+  (`ConfigError`).
+  - Mismo prompt como mensaje `system` y mismo mensaje de usuario que Claude (R8).
+  - Parámetros: `stream: false`, `keep_alive: "30m"` (el modelo queda cargado entre consultas),
+    `temperature: 0.2`, `num_predict: 600` (~1.200 caracteres en español son unos 400
+    tokens) y `num_ctx: 8192`.
+  - Igual que con Claude, sin reintentos. Da "resumen no disponible": cualquier falla de red
+    o HTTP (por ejemplo, Ollama apagado o el modelo sin descargar), un JSON inesperado,
+    `done_reason` distinto de `stop` (cortado por `num_predict`), y un texto vacío o de más
+    de 1.200 caracteres. El log tiene solo el tipo de falla (FR-024).
+  - Modelo por defecto: `qwen2.5:7b`. Se descartaron `llama3.2:1b`, que en la prueba inventó
+    refinanciaciones y calificó la situación como "grave" (incumple FR-017/018), y
+    `qwen2.5-coder:7b`, que está orientado a código.
+- **Tiempo límite configurable**: `HEALTH_SCORE_SUMMARY_TIMEOUT` (segundos, por defecto 15)
+  vale para los dos proveedores, y `VITE_CREDIT_CHECK_TIMEOUT_MS` (por defecto 28.000) para
+  el dashboard.
+  - Medido con `qwen2.5:7b`, solo CPU (i5-1345U, 32 GB): unos 6 tokens/s al generar. Tarda
+    25-50 s con el modelo cargado y ~95 s en la primera llamada. El endpoint completo, con
+    un fixture, tardó 37 s.
+  - Con Ollama local **no se cumplen SC-001 (texto en menos de 10 s) ni SC-005 (aviso en
+    menos de 30 s)**. `compose.ollama.yaml` usa 90 s para el modelo y 105 s para el dashboard,
+    y nginx espera hasta 120 s (`proxy_read_timeout`).
+  - Es una decisión de uso local o de desarrollo. Con una GPU, o con Claude, los criterios
+    vuelven a cumplirse sin cambiar código.
+- **Privacidad (Principio IX)**: la respuesta del BCRA se procesa en la misma máquina y no
+  sale a ningún proveedor externo; Ollama no entrena con las consultas. Es más restrictivo
+  que la API de Claude, así que la confirmación T050b no hace falta para este proveedor.
+  Si `HEALTH_SCORE_OLLAMA_URL` apunta a otra máquina, esa máquina queda bajo el mismo
+  criterio que un proveedor externo.
+- **Alternativas**: el cliente Python `ollama` (dependencia nueva para un solo POST); la API
+  compatible con OpenAI de Ollama (no aporta nada sobre `/api/chat`); bajar a un modelo de
+  3B (más rápido, calidad sin medir).
+
 ## R6. Tiempo límite y reintentos del modelo
 
 - **Decisión**: `client.with_options(timeout=15.0, max_retries=0)`. Se captura

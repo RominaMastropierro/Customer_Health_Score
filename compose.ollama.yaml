@@ -1,0 +1,24 @@
+# Override para resumir con un modelo local de Ollama en vez de Claude (spec 005, research R5b).
+#   docker compose -f compose.yaml -f compose.ollama.yaml up -d --build
+# Ollama corre en el host (fuera de Docker) con el modelo ya descargado: `ollama pull qwen2.5:7b`.
+# La respuesta del BCRA no sale de la máquina (Principio IX). El secreto de la API key sigue
+# declarado en compose.yaml: el archivo secrets/anthropic_api_key.txt tiene que existir, pero
+# no se usa.
+services:
+  api:
+    environment:
+      HEALTH_SCORE_SUMMARIZER: ollama
+      # Docker Desktop resuelve host.docker.internal al host; en Linux lo agrega extra_hosts.
+      HEALTH_SCORE_OLLAMA_URL: http://host.docker.internal:11434
+      HEALTH_SCORE_SUMMARY_MODEL: qwen2.5:7b
+      #HEALTH_SCORE_SUMMARY_MODEL: llama3.2:1b
+      # Medido con qwen2.5:7b en CPU (i5-1345U): 25-50 s con el modelo cargado, ~95 s en frío.
+      HEALTH_SCORE_SUMMARY_TIMEOUT: "90"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  web:
+    build:
+      args:
+        # BCRA (10 s) + modelo (90 s) + margen; nginx espera hasta 120 s (proxy_read_timeout).
+        VITE_CREDIT_CHECK_TIMEOUT_MS: "105000"

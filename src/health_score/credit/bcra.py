@@ -14,6 +14,8 @@ from health_score.credit.models import BcraDebtResponse
 
 logger = logging.getLogger(__name__)
 
+USER_AGENT = "health-score/1.0"
+
 
 @dataclass(frozen=True)
 class Found:
@@ -73,7 +75,9 @@ class HttpBcraSource:
         return result
 
     def _lookup(self, digits: str) -> BcraLookup:
-        request = Request(f"{self.base_url}/Deudas/{digits}", headers={"Accept": "application/json"})
+        # El firewall del BCRA rechaza con 403 el User-Agent por defecto "Python-urllib/3.x".
+        headers = {"Accept": "application/json", "User-Agent": USER_AGENT}
+        request = Request(f"{self.base_url}/Deudas/{digits}", headers=headers)
         try:
             with urlopen(request, timeout=self.timeout) as response:
                 raw = json.loads(response.read().decode("utf-8"))

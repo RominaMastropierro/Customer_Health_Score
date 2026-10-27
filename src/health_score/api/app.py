@@ -16,6 +16,7 @@ from sqlalchemy.exc import DatabaseError, SQLAlchemyError
 from health_score import (
     ClientMetrics,
     ClientScoreResult,
+    ConfigError,
     PortfolioResult,
     ScoreResult,
     ScoringConfig,
@@ -29,11 +30,18 @@ from health_score.credit import (
     CreditStatus,
     CreditStatusRequest,
     HttpBcraSource,
+    OllamaSummarizer,
     Summarizer,
     check_credit,
     load_prompt,
 )
 from health_score.credit.demo import load_demo
+from health_score.credit.summarizer import (
+    DEFAULT_MODEL,
+    DEFAULT_OLLAMA_MODEL,
+    DEFAULT_OLLAMA_URL,
+    MODEL_TIMEOUT_SECONDS,
+)
 from health_score.data import (
     ClientConflictError,
     ClientRepository,
@@ -69,7 +77,12 @@ DEFAULT_BCRA_URL = "https://api.bcra.gob.ar/CentralDeDeudores/v1.0"
 SUMMARY_PROMPT_ENV = "HEALTH_SCORE_SUMMARY_PROMPT"
 DEFAULT_SUMMARY_PROMPT_PATH = "config/prompts/bcra-summary.md"
 SUMMARY_MODEL_ENV = "HEALTH_SCORE_SUMMARY_MODEL"
-DEFAULT_SUMMARY_MODEL = "claude-opus-5-5"
+# Proveedor del resumen: "claude" (API de Anthropic) u "ollama" (modelo local, research R5b).
+SUMMARIZER_ENV = "HEALTH_SCORE_SUMMARIZER"
+SUMMARIZERS = ("claude", "ollama")
+OLLAMA_URL_ENV = "HEALTH_SCORE_OLLAMA_URL"
+# Segundos de espera del modelo; un modelo local en CPU puede necesitar más que los 15 s.
+SUMMARY_TIMEOUT_ENV = "HEALTH_SCORE_SUMMARY_TIMEOUT"
 # Ruta del secreto con la API key (Docker: /run/secrets/anthropic_api_key); nunca la clave.
 API_KEY_FILE_ENV = "ANTHROPIC_API_KEY_FILE"
 API_KEY_ENV = "ANTHROPIC_API_KEY"
@@ -367,7 +380,41 @@ def _api_key_from_env() -> str | None:
     return os.environ.get(API_KEY_ENV, "").strip() or None
 
 
-def _summarizer_from_env(prompt: str, model: str) -> Summarizer | None:
+def _summary_timeout_from_env() -> float:
+    value = os.environ.get(SUMMARY_TIMEOUT_ENV, "").strip()
+    if not value:
+        return MODEL_TIMEOUT_SECONDS
+    try:
+        seconds = float(value)
+    except ValueError:
+        seconds = 0.0
+    if not seconds > 0:
+        raise ConfigError(f"{SUMMARY_TIMEOUT_ENV} debe ser un número de segundos mayor que 0")
+    return seconds
+
+
+def _summarizer_from_env(prompt: str) -> Summarizer | None:
+    """Resumidor elegido por HEALTH_SCORE_SUMMARIZER; un valor desconocido impide arrancar."""
+    provider = os.environ.get(SUMMARIZER_ENV, "claude").strip().lower()
+    if provider not in SUMMARIZERS:
+        raise ConfigError(f"{SUMMARIZER_ENV} debe ser uno de {', '.join(SUMMARIZERS)}")
+    model = os.environ.get(SUMMARY_MODEL_ENV, "").strip()
+    timeout = _summary_timeout_from_env()
+    if provider == "ollama":
+        # Sin credenciales: si Ollama no responde, cada consulta muestra "resumen no
+        # disponible" (FR-029), igual que con Claude caído.
+        return OllamaSummarizer(
+            prompt,
+            model or DEFAULT_OLLAMA_MODEL,
+            os.environ.get(OLLAMA_URL_ENV, DEFAULT_OLLAMA_URL),
+            timeout,
+        )
+    return _claude_summarizer_from_env(prompt, model or DEFAULT_MODEL, timeout)
+
+
+def _claude_summarizer_from_env(
+    prompt: str, model: str, timeout: float = MODEL_TIMEOUT_SECONDS
+) -> Summarizer | None:
     """Resumidor con la API key del secreto o de la variable de entorno (research R7).
 
     No se usa el perfil de `ant auth login`: no hay forma fiable de detectarlo al arrancar.
@@ -379,7 +426,7 @@ def _summarizer_from_env(prompt: str, model: str) -> Summarizer | None:
         # Una sola advertencia al arrancar: el resto de la aplicación funciona igual (FR-029).
         logger.warning("Sin credenciales del modelo: la consulta al BCRA no podrá resumir")
         return None
-    return ClaudeSummarizer(prompt, model, anthropic.Anthropic(api_key=api_key))
+    return ClaudeSummarizer(prompt, model, anthropic.Anthropic(api_key=api_key), timeout)
 
 
 def app_from_env() -> FastAPI:
@@ -409,9 +456,8 @@ def app_from_env() -> FastAPI:
         logger.warning("Modo demostración: BCRA y modelo simulados")
         credit_source, summarizer = load_demo(demo_fixtures)
     else:
-        model = os.environ.get(SUMMARY_MODEL_ENV, DEFAULT_SUMMARY_MODEL)
         credit_source = HttpBcraSource(os.environ.get(BCRA_URL_ENV, DEFAULT_BCRA_URL))
-        summarizer = _summarizer_from_env(prompt, model)
+        summarizer = _summarizer_from_env(prompt)
     return create_app(
         config, SqlClientRepository(engine), credit_source=credit_source, summarizer=summarizer
     )

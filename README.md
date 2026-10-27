@@ -68,6 +68,122 @@ docker compose down -v           # detener y borrar la base (la carga inicial se
 - Los contenedores corren sin privilegios y con el sistema de archivos de solo lectura,
   según el OWASP Docker Security Cheat Sheet. El detalle de cada control, las excepciones y
   lo que hay que configurar en el host están en [SECURITY-DOCKER.md](SECURITY-DOCKER.md).
+- Para que el resumen del BCRA lo redacte un modelo local en vez de Claude, ver
+  [Levantar con Docker y Ollama](#levantar-con-docker-y-ollama).
+
+## Levantar con Docker y Ollama
+
+Con esta variante, el resumen de la consulta al BCRA lo redacta un modelo de
+[Ollama](https://ollama.com) que corre en la misma PC, fuera de Docker. La respuesta del BCRA
+no sale de la máquina y no hace falta una API key de Anthropic.
+
+### Requisitos de la PC
+
+| Requisito | Detalle |
+|-----------|---------|
+| Sistema operativo | Windows 10/11 (64 bits), macOS o Linux |
+| Docker | Docker Desktop (en Windows, con el backend WSL 2) o Docker Engine con el plugin Compose v2 (`docker compose`) |
+| Ollama | Instalado en el host (no en Docker) desde [ollama.com/download](https://ollama.com/download) |
+| Modelo | `qwen2.5:7b` (~4,7 GB de descarga) |
+| Memoria RAM | 16 GB recomendados: el modelo ocupa ~5-6 GB, más Docker y los contenedores (hasta 640 MB) |
+| Disco | ~7 GB libres: modelo (~4,7 GB) e imágenes `api` y `web` (~400 MB), más las capas de construcción |
+| GPU | Opcional. Sin GPU funciona, pero cada resumen tarda 25-50 s (~95 s la primera vez) |
+| Red | Salida a internet hacia `api.bcra.gob.ar` (HTTPS, puerto 443) para la consulta al BCRA |
+| Puertos | `8080` libre en el host (dashboard) y `11434` (Ollama, su puerto por defecto) |
+
+No hace falta instalar Python ni Node.js: las imágenes se construyen dentro de Docker. Se probó
+con Docker 29.8, Compose 5.6 y Ollama 0.32 en Windows 11.
+
+### Pasos
+
+Todos los comandos se ejecutan en PowerShell, desde la raíz del repositorio.
+
+**1. Descargar el modelo y comprobar que Ollama responde** (una sola vez):
+
+```powershell
+ollama pull qwen2.5:7b
+ollama list                                   # debe aparecer qwen2.5:7b
+curl.exe http://127.0.0.1:11434/api/tags      # debe responder un JSON con los modelos
+```
+
+En Windows y macOS, Ollama queda corriendo en segundo plano después de instalarlo. Si no
+responde, abrir la aplicación Ollama o ejecutar `ollama serve`.
+
+**2. Crear el archivo del secreto** (una sola vez). [compose.yaml](compose.yaml) declara el
+secreto de la API key de Claude, así que el archivo tiene que existir aunque con Ollama no se
+use. Alcanza con cualquier texto:
+
+```powershell
+New-Item -ItemType Directory -Force secrets | Out-Null
+Set-Content -NoNewline -Encoding ascii secrets/anthropic_api_key.txt "sin-uso"
+```
+
+**3. Construir y levantar los contenedores** con los **dos** archivos de Compose:
+
+```powershell
+docker compose -f compose.yaml -f compose.ollama.yaml up -d --build
+```
+
+Abrir el dashboard en `http://127.0.0.1:8080`. La primera construcción tarda varios minutos.
+
+[compose.ollama.yaml](compose.ollama.yaml) cambia lo siguiente respecto de
+[compose.yaml](compose.yaml):
+
+- `api`: usa Ollama (`HEALTH_SCORE_SUMMARIZER=ollama`) en `http://host.docker.internal:11434`
+  con `qwen2.5:7b`, y espera al modelo hasta 90 s.
+- `web`: el dashboard espera la respuesta hasta 105 s. Es un valor de compilación, así que
+  hace falta `--build` cada vez que se cambia. nginx espera hasta 120 s.
+
+**4. Comprobar la configuración:**
+
+```powershell
+# Debe mostrar HEALTH_SCORE_SUMMARIZER=ollama
+docker compose -f compose.yaml -f compose.ollama.yaml exec api env | Select-String "SUMMAR|OLLAMA"
+
+# Debe imprimir 200: la API llega a Ollama en el host
+docker compose -f compose.yaml -f compose.ollama.yaml exec api python -c "from urllib.request import urlopen; print(urlopen('http://host.docker.internal:11434/api/tags', timeout=5).status)"
+```
+
+Luego, en "Nuevo cliente", escribir un CUIT/CUIL y salir del campo. Si el BCRA informa deudas,
+el resumen aparece después de 25-50 s (~95 s la primera vez, mientras se carga el modelo, que
+después queda en memoria 30 minutos).
+
+### Los dos archivos de Compose, siempre
+
+Cualquier `docker compose` que **recree** contenedores (`up`, `up --build`,
+`up --force-recreate`) tiene que llevar los dos `-f`. Un `docker compose up -d --build` sin
+`compose.ollama.yaml` vuelve a la configuración por defecto: la API usa Claude y, sin una
+clave válida, el log muestra `Resumen no disponible: AuthenticationError`.
+
+Para no repetirlos en cada comando, definir `COMPOSE_FILE` en la sesión de PowerShell (en
+Windows los archivos se separan con `;`, en macOS y Linux con `:`):
+
+```powershell
+$env:COMPOSE_FILE = "compose.yaml;compose.ollama.yaml"
+docker compose up -d --build      # ahora incluye el override de Ollama
+docker compose logs -f api
+docker compose down
+```
+
+### Problemas frecuentes
+
+Ver el log con `docker compose -f compose.yaml -f compose.ollama.yaml logs -f api`. El
+dashboard muestra mensajes genéricos; la causa está en el log.
+
+| Mensaje en el log de `api` | Causa | Solución |
+|----------------------------|-------|----------|
+| `Resumen no disponible: AuthenticationError` | Se levantó sin `compose.ollama.yaml` y la API usa Claude | Volver a levantar con los dos `-f` (paso 3) |
+| `BCRA no disponible: HTTP 403` | El BCRA rechazó la solicitud | Reconstruir con `--build` para tener la versión actual de la API, que envía su propio User-Agent |
+| `BCRA no disponible: URLError` o `TimeoutError` | Sin salida a internet o el BCRA no responde | Revisar la conexión, el proxy o el firewall hacia `api.bcra.gob.ar` |
+| `Resumen no disponible: URLError` | Ollama apagado, en otro puerto o inaccesible desde el contenedor | Paso 1 y la segunda comprobación del paso 4 |
+| `Resumen no disponible: TimeoutError` | El modelo tardó más de 90 s (habitual en la primera consulta) | Pulsar "Reintentar": el modelo ya quedó cargado |
+| `Resumen no disponible: HTTPError` | Ollama respondió con error; lo más común es que no esté descargado `qwen2.5:7b` | `ollama pull qwen2.5:7b` |
+
+**En Linux**, Ollama escucha por defecto solo en `127.0.0.1` y los contenedores no lo
+alcanzan por `host.docker.internal`. Hacer que escuche en todas las interfaces
+(`OLLAMA_HOST=0.0.0.0` en el servicio de Ollama; con systemd,
+`sudo systemctl edit ollama` y agregar `Environment="OLLAMA_HOST=0.0.0.0"`), y bloquear el
+puerto `11434` desde fuera de la máquina con el firewall.
 
 ## Instalación
 
@@ -126,7 +242,10 @@ Variables de entorno:
 | `HEALTH_SCORE_CLIENTS` | `data/clients.json` | Archivo de la carga inicial (se usa solo cuando la base nunca fue inicializada) |
 | `HEALTH_SCORE_BCRA_URL` | `https://api.bcra.gob.ar/CentralDeDeudores/v1.0` | Base de la Central de Deudores del BCRA |
 | `HEALTH_SCORE_SUMMARY_PROMPT` | `config/prompts/bcra-summary.md` | Prompt del resumen del BCRA; si falta o está vacío, el servicio no arranca |
-| `HEALTH_SCORE_SUMMARY_MODEL` | `claude-opus-5-5` | Modelo de Claude que redacta el resumen |
+| `HEALTH_SCORE_SUMMARIZER` | `claude` | Quién redacta el resumen: `claude` (API de Anthropic) u `ollama` (modelo local) |
+| `HEALTH_SCORE_SUMMARY_MODEL` | `claude-opus-5-5` / `qwen2.5:7b` | Modelo que redacta el resumen (el default depende del proveedor) |
+| `HEALTH_SCORE_SUMMARY_TIMEOUT` | `15` | Segundos de espera del modelo; con Ollama en CPU, subirlo (p. ej. `90`) |
+| `HEALTH_SCORE_OLLAMA_URL` | `http://127.0.0.1:11434` | Dirección de Ollama (en Docker, `http://host.docker.internal:11434`) |
 | `ANTHROPIC_API_KEY_FILE` | sin definir | Ruta del archivo con la API key de Claude (en Docker, `/run/secrets/anthropic_api_key`) |
 | `HEALTH_SCORE_DEMO_FIXTURES` | sin definir | Carpeta de fixtures ficticios; si está definida, el BCRA y el modelo se simulan (solo demos) |
 
@@ -201,6 +320,36 @@ clave, la API arranca igual y, cuando hay deudas, muestra "No pudimos preparar e
 > Estado: **confirmado el 2026-10-26** por la persona responsable del proyecto, para la cuenta
 > de la API key actual. Si se cambia de cuenta u organización, volver a confirmarlo.
 
+**Resumen con un modelo local (Ollama).** En vez de Claude, el texto lo puede redactar un
+modelo de [Ollama](https://ollama.com) en la misma máquina: la respuesta del BCRA no sale de
+ella y no hace falta API key (spec 005, research R5b).
+
+```powershell
+ollama pull qwen2.5:7b                        # una sola vez
+
+# API (terminal 1)
+$env:HEALTH_SCORE_SUMMARIZER = "ollama"
+$env:HEALTH_SCORE_SUMMARY_TIMEOUT = "90"      # en CPU, un resumen tarda 25-50 s
+uvicorn health_score.api.app:app_from_env --factory --reload
+
+# Dashboard (terminal 2)
+cd frontend
+$env:VITE_CREDIT_CHECK_TIMEOUT_MS = "105000"  # el dashboard espera hasta 105 s
+npm run dev
+
+# o con Docker (Ollama sigue corriendo en el host):
+docker compose -f compose.yaml -f compose.ollama.yaml up -d --build
+```
+
+Requisitos de la PC, pasos completos y problemas frecuentes con Docker: ver
+[Levantar con Docker y Ollama](#levantar-con-docker-y-ollama).
+
+En una notebook sin GPU, `qwen2.5:7b` tarda 25-50 s por resumen y ~95 s la primera vez, cuando
+carga el modelo. Por eso hay que subir los dos tiempos límite, y no se cumple el objetivo de
+mostrar el texto en menos de 10 s. Si Ollama está apagado o el modelo no está descargado, el
+dashboard muestra "No pudimos preparar el resumen…" con "Reintentar". `llama3.2:1b` es más
+rápido, pero en las pruebas inventó datos.
+
 **Demostración sin datos reales.** El BCRA y el modelo se simulan con los fixtures ficticios
 de `tests/fixtures/`; no hace falta API key ni salida a internet:
 
@@ -216,9 +365,9 @@ Los CUIT de la demostración y lo que muestra cada uno están en
 
 **Ajustar el prompt.** Editar [config/prompts/bcra-summary.md](config/prompts/bcra-summary.md)
 y reiniciar la API (`docker compose restart api` en Docker). Para revisar los textos que
-genera, ejecutar `python scripts/review_bcra_prompt.py`: llama al modelo real con las
-respuestas ficticias de `tests/fixtures/bcra/`, **tiene costo** y escribe los textos en
-`tmp/prompt-review/` para revisarlos a mano.
+genera, ejecutar `python scripts/review_bcra_prompt.py --provider ollama` (sin costo) o
+`--provider claude` (**tiene costo**). Envía solo las respuestas ficticias de
+`tests/fixtures/bcra/` y escribe los textos en `tmp/prompt-review/` para revisarlos a mano.
 
 ## Cambiar pesos y umbrales
 

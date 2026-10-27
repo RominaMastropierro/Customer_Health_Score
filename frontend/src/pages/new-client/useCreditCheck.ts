@@ -14,7 +14,18 @@ export type CreditCheckState =
 
 // Los tiempos límite del BCRA y del SDK son por operación de red, no por la duración total
 // (research R6): el servicio solo no garantiza el aviso en menos de 30 s (SC-005).
-export const CREDIT_CHECK_TIMEOUT_MS = 28_000
+// Con un modelo local lento (Ollama en CPU) se sube con VITE_CREDIT_CHECK_TIMEOUT_MS al
+// compilar o al levantar Vite (research R5b).
+const DEFAULT_CREDIT_CHECK_TIMEOUT_MS = 28_000
+
+export function creditCheckTimeoutMs(configured: string | undefined): number {
+  const value = Number(configured)
+  return Number.isInteger(value) && value > 0 ? value : DEFAULT_CREDIT_CHECK_TIMEOUT_MS
+}
+
+export const CREDIT_CHECK_TIMEOUT_MS = creditCheckTimeoutMs(
+  import.meta.env.VITE_CREDIT_CHECK_TIMEOUT_MS,
+)
 
 interface InFlight {
   controller: AbortController

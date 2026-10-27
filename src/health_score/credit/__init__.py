@@ -6,7 +6,12 @@ Paquete aislado del scoring (Principio II): ni el scoring lo importa ni este imp
 from health_score.credit.bcra import BcraSource, HttpBcraSource
 from health_score.credit.models import CreditStatus, CreditStatusRequest
 from health_score.credit.service import check_credit
-from health_score.credit.summarizer import ClaudeSummarizer, Summarizer, load_prompt
+from health_score.credit.summarizer import (
+    ClaudeSummarizer,
+    OllamaSummarizer,
+    Summarizer,
+    load_prompt,
+)
 
 __all__ = [
     "BcraSource",
@@ -14,6 +19,7 @@ __all__ = [
     "CreditStatus",
     "CreditStatusRequest",
     "HttpBcraSource",
+    "OllamaSummarizer",
     "Summarizer",
     "check_credit",
     "load_prompt",
